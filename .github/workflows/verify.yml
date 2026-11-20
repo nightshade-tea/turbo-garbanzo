@@ -1,0 +1,22 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: CFLAGS=-Werror make CC=gcc-14
+      - run: CFLAGS=-Werror make CC=gcc-14 debug
+
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install clang-format==23.1.4
+      - run: git ls-files -z '*.c' '*.h' | xargs -0 -r clang-format --dry-run --Werror
