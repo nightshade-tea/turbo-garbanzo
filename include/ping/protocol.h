@@ -4,4 +4,4 @@
 #define PING "ping"
 #define PONG "pong"
 
-#endif
+#endif /* PING_PROTOCOL_H  */

@@ -9,4 +9,4 @@ int set (int sock, unsigned int key, unsigned long val);
 int inc (int sock, unsigned int key);
 int dec (int sock, unsigned int key);
 
-#endif
+#endif /* TABLE_PROTOCOL_H  */
