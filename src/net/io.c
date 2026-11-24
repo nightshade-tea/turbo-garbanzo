@@ -15,7 +15,7 @@ net_io_send (int sock, const void *buf, size_t len)
 
   while (off < len)
     {
-      ssize_t n = send (sock, p + off, len - off, MSG_NOSIGNAL);
+      n = send (sock, p + off, len - off, MSG_NOSIGNAL);
 
       if (n < 0)
         {
@@ -162,7 +162,7 @@ net_io_recvln (int sock, char *str, size_t len)
 
       if (nl != NULL)
         {
-          k = (size_t)(nl - str - i);
+          k = (size_t)(nl - str) - i;
 
           if (net_io_recv (sock, str + i, k + 1) < 0)
             {
