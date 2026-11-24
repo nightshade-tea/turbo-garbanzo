@@ -20,18 +20,23 @@ hdrs := $(shell find $(src) $(inc) -name '*.h')
 objs := $(srcs:$(src)/%.c=$(build)/obj/%.o)
 deps := $(objs:.o=.d)
 
-# progs = directories under $(src) that contain at least one .c file
+# static library built from $(src)/net, linked into every program
+lib := $(build)/net.a
+
+# progs = directories under $(src) that contain at least one .c file,
+# except the library directory
 prog_dirs := $(sort $(dir $(wildcard $(src)/*/*.c)))
-progs     := $(notdir $(prog_dirs:/=))
+progs     := $(filter-out net,$(notdir $(prog_dirs:/=)))
 bins      := $(addprefix $(build)/,$(progs))
 
 # settings ------------------------------------------------------------------- #
 
 # compiler, preprocessor flags, compiler flags
 CC       := gcc
-CPPFLAGS += -I$(inc) -MMD -MP
-CFLAGS   += -std=c23 -Wall -Wextra -Wconversion -Wstrict-prototypes \
+CPPFLAGS += -I$(inc) -MMD -MP -D_DEFAULT_SOURCE
+CFLAGS   += -std=c23 -pthread -Wall -Wextra -Wconversion -Wstrict-prototypes \
             -Wmissing-prototypes -Wshadow -Wundef -Wdouble-promotion
+LDFLAGS  += -pthread
 
 ifdef DEBUG
 CPPFLAGS += -DDEBUG
@@ -56,11 +61,18 @@ $(build)/obj/%.o : $(src)/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
-# link: build/obj/<prog>/*.o -> build/<prog>
-$(foreach b,$(bins),$(eval $(b) : $(call prog_objs,$(notdir $(b)))))
-$(bins) :
+# archive: build/obj/net/*.o -> build/net.a
+$(lib) : $(call prog_objs,net)
 	@mkdir -p $(@D)
-	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	rm -f $@
+	$(AR) rcs $@ $^
+
+# link: build/obj/<prog>/*.o + build/net.a -> build/<prog>
+# (the library must come after the objects on the link line)
+$(foreach b,$(bins),$(eval $(b) : $(call prog_objs,$(notdir $(b)))))
+$(bins) : $(lib)
+	@mkdir -p $(@D)
+	$(CC) $(LDFLAGS) -o $@ $(filter %.o,$^) $(lib) $(LDLIBS)
 
 .PHONY : all debug format clean
 

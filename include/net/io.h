@@ -1,0 +1,21 @@
+#ifndef NET_IO_H
+#define NET_IO_H
+
+#include <stddef.h>
+#include <sys/types.h>
+
+/* send len bytes from buf. returns # of bytes sent or -1 on error.  */
+ssize_t net_io_send (int sock, const void *buf, size_t len);
+
+/* recv len bytes to buf. returns # of bytes received or -1 on error.  */
+ssize_t net_io_recv (int sock, void *buf, size_t len);
+
+/* send str until '\n' or NUL, up to len characters, then '\n'.
+   returns # of bytes sent or -1 on error.  */
+ssize_t net_io_sendln (int sock, const char *str, size_t len);
+
+/* recv until '\n', up to len - 1 characters (NUL terminated).
+   returns # of bytes received or -1 on error.  */
+ssize_t net_io_recvln (int sock, char *str, size_t len);
+
+#endif /* NET_IO_H  */
