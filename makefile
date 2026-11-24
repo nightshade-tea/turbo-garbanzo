@@ -25,7 +25,7 @@ libs  := net table
 arqs  := $(libs:%=$(build)/%.a)
 
 # programs: src/<prog>/ -> build/<prog>
-progs := ping pong
+progs := ping pong tblsrv
 bins  := $(progs:%=$(build)/%)
 
 # settings ------------------------------------------------------------------- #
