@@ -20,14 +20,13 @@ hdrs := $(shell find $(src) $(inc) -name '*.h')
 objs := $(srcs:$(src)/%.c=$(build)/obj/%.o)
 deps := $(objs:.o=.d)
 
-# static library built from $(src)/net, linked into every program
-lib := $(build)/net.a
+# static libraries: src/<lib>/ -> build/<lib>.a, linked into every program
+libs  := net
+arqs  := $(libs:%=$(build)/%.a)
 
-# progs = directories under $(src) that contain at least one .c file,
-# except the library directory
-prog_dirs := $(sort $(dir $(wildcard $(src)/*/*.c)))
-progs     := $(filter-out net,$(notdir $(prog_dirs:/=)))
-bins      := $(addprefix $(build)/,$(progs))
+# programs: src/<prog>/ -> build/<prog>
+progs := ping pong
+bins  := $(progs:%=$(build)/%)
 
 # settings ------------------------------------------------------------------- #
 
@@ -52,7 +51,7 @@ endif
 # functions ------------------------------------------------------------------ #
 
 # $(1) -> objects belonging to $(1)
-prog_objs = $(filter $(build)/obj/$(1)/%,$(objs))
+objs_of = $(filter $(build)/obj/$(1)/%,$(objs))
 
 # targets -------------------------------------------------------------------- #
 
@@ -61,18 +60,18 @@ $(build)/obj/%.o : $(src)/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
-# archive: build/obj/net/*.o -> build/net.a
-$(lib) : $(call prog_objs,net)
+# archive: build/obj/<lib>/*.o -> build/<lib>.a
+$(foreach l,$(libs),$(eval $(build)/$(l).a : $(call objs_of,$(l))))
+$(arqs) :
 	@mkdir -p $(@D)
 	rm -f $@
 	$(AR) rcs $@ $^
 
-# link: build/obj/<prog>/*.o + build/net.a -> build/<prog>
-# (the library must come after the objects on the link line)
-$(foreach b,$(bins),$(eval $(b) : $(call prog_objs,$(notdir $(b)))))
-$(bins) : $(lib)
+# link: build/obj/<prog>/*.o + build/<lib>.a -> build/<prog>
+$(foreach p,$(progs),$(eval $(build)/$(p) : $(call objs_of,$(p)) $(arqs)))
+$(bins) :
 	@mkdir -p $(@D)
-	$(CC) $(LDFLAGS) -o $@ $(filter %.o,$^) $(lib) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 .PHONY : all debug format clean
 
