@@ -4,7 +4,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
-#include "net/io.h"
+#include <net/io.h>
 
 ssize_t
 net_io_send (int sock, const void *buf, size_t len)
