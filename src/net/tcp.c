@@ -11,7 +11,7 @@
 int
 net_tcp_listen (const char *host, const char *port, int backlog)
 {
-  struct addrinfo hints = {0}, *res;
+  struct addrinfo hints = { 0 }, *res;
   int rc, sfd, one = 1;
 
   hints.ai_family = AF_INET;
@@ -69,7 +69,7 @@ err_getaddrinfo:
 int
 net_tcp_connect (const char *host, const char *port)
 {
-  struct addrinfo hints = {0}, *res;
+  struct addrinfo hints = { 0 }, *res;
   int rc, sfd;
 
   hints.ai_family = AF_INET;
