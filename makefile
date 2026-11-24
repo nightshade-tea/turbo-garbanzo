@@ -21,7 +21,7 @@ objs := $(srcs:$(src)/%.c=$(build)/obj/%.o)
 deps := $(objs:.o=.d)
 
 # static libraries: src/<lib>/ -> build/<lib>.a, linked into every program
-libs  := net
+libs  := net table
 arqs  := $(libs:%=$(build)/%.a)
 
 # programs: src/<prog>/ -> build/<prog>
