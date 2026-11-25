@@ -12,13 +12,36 @@
 #include <net/io.h>
 #include <net/tcp.h>
 #include <ping/protocol.h>
+#include <monitor/protocol.h>
 
 [[noreturn]]
 static void
 usage (void)
 {
-  fprintf (stderr, "usage: pong [host] <port>\n");
+  fprintf (stderr, "usage: pong <ip> <port> <monitor>\n");
   exit (2);
+}
+
+[[noreturn]]
+static void *
+mon (void *arg)
+{
+  char **argv = arg, msg[64], c;
+  int monfd;
+
+  if ((monfd = net_tcp_connect (argv[3], MONITOR_PORT)) < 0)
+    exit (1);
+
+  snprintf (msg, sizeof msg, "%s %s", argv[1], argv[2]);
+
+  if (net_io_sendln (monfd, msg, sizeof msg) < 0)
+    err (1, "send");
+
+  /* the monitor never sends, so returning means it's gone  */
+  while (recv (monfd, &c, 1, 0) < 0 && errno == EINTR)
+    ;
+
+  errx (1, "monitor closed the connection");
 }
 
 static void *
@@ -50,23 +73,22 @@ serve (void *arg)
 int
 main (int argc, char *argv[])
 {
-  const char *host, *port;
   int lfd, cfd, rc;
   pthread_t t;
 
-  if (argc != 2 && argc != 3)
+  if (argc != 4)
     usage ();
 
-  if (argc == 3)
-    host = argv[1];
-
-  else
-    host = "0.0.0.0";
-
-  port = argv[argc - 1];
-
-  if ((lfd = net_tcp_listen (host, port, INT_MAX)) < 0)
+  if ((lfd = net_tcp_listen (argv[1], argv[2], INT_MAX)) < 0)
     return 1;
+
+  if ((rc = pthread_create (&t, NULL, mon, argv)))
+    {
+      errno = rc;
+      err (1, "pthread_create");
+    }
+
+  pthread_detach (t);
 
   for (;;)
     {

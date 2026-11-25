@@ -1,0 +1,6 @@
+#ifndef MONITOR_PROTOCOL_H
+#define MONITOR_PROTOCOL_H
+
+#define MONITOR_PORT "3031"
+
+#endif /* MONITOR_PROTOCOL_H  */
