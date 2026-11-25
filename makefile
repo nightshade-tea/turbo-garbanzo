@@ -3,8 +3,9 @@
 # debug build if `debug` is one of the goals
 DEBUG := $(filter debug,$(MAKECMDGOALS))
 
-# project root, source, include and build directories
+# project root, library, source, include and build directories
 root  := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+lib   := $(root)/lib
 src   := $(root)/src
 inc   := $(root)/include
 
@@ -15,19 +16,24 @@ build := $(root)/build
 endif
 
 # sources, headers, objects, header dependencies
-srcs := $(shell find $(src) -name '*.c')
-hdrs := $(shell find $(src) $(inc) -name '*.h')
-objs := $(srcs:$(src)/%.c=$(build)/obj/%.o)
+srcs := $(shell find $(lib) $(src) -name '*.c')
+hdrs := $(shell find $(lib) $(src) $(inc) -name '*.h')
+objs := $(srcs:$(root)/%.c=$(build)/obj/%.o)
 deps := $(objs:.o=.d)
 
-# static library built from $(src)/net, linked into every program
-lib := $(build)/net.a
+# static libraries: lib/<lib>/ -> build/<lib>.a
+libs  := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard $(lib)/*/*.c)))))
+arqs  := $(libs:%=$(build)/%.a)
 
-# progs = directories under $(src) that contain at least one .c file,
-# except the library directory
-prog_dirs := $(sort $(dir $(wildcard $(src)/*/*.c)))
-progs     := $(filter-out net,$(notdir $(prog_dirs:/=)))
-bins      := $(addprefix $(build)/,$(progs))
+# programs: src/<prog>/ -> build/<prog>
+progs := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard $(src)/*/*.c)))))
+bins  := $(progs:%=$(build)/%)
+
+# libraries per program, dependents first (static link order)
+monitor_libs := table net
+ping_libs    := net
+pong_libs    := net
+tblsrv_libs  := net
 
 # settings ------------------------------------------------------------------- #
 
@@ -52,31 +58,31 @@ endif
 # functions ------------------------------------------------------------------ #
 
 # $(1) -> objects belonging to $(1)
-prog_objs = $(filter $(build)/obj/$(1)/%,$(objs))
+objs_of = $(filter $(build)/obj/$(1)/%,$(objs))
 
 # targets -------------------------------------------------------------------- #
 
-# compile: src/<path>.c -> build/obj/<path>.[od]
-$(build)/obj/%.o : $(src)/%.c
+# compile: <path>.c -> build/obj/<path>.[od]
+$(build)/obj/%.o : $(root)/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
-# archive: build/obj/net/*.o -> build/net.a
-$(lib) : $(call prog_objs,net)
+# archive: build/obj/lib/<lib>/*.o -> build/<lib>.a
+$(foreach l,$(libs),$(eval $(build)/$(l).a : $(call objs_of,lib/$(l))))
+$(arqs) :
 	@mkdir -p $(@D)
 	rm -f $@
 	$(AR) rcs $@ $^
 
-# link: build/obj/<prog>/*.o + build/net.a -> build/<prog>
-# (the library must come after the objects on the link line)
-$(foreach b,$(bins),$(eval $(b) : $(call prog_objs,$(notdir $(b)))))
-$(bins) : $(lib)
+# link: build/obj/src/<prog>/*.o + build/<lib>.a -> build/<prog>
+$(foreach p,$(progs),$(eval $(build)/$(p) : $(call objs_of,src/$(p)) $($(p)_libs:%=$(build)/%.a)))
+$(bins) :
 	@mkdir -p $(@D)
-	$(CC) $(LDFLAGS) -o $@ $(filter %.o,$^) $(lib) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 .PHONY : all debug format clean
 
-all debug : $(bins)
+all debug : $(arqs) $(bins)
 
 format :
 	clang-format -i $(srcs) $(hdrs)
