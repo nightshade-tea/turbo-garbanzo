@@ -14,30 +14,80 @@
 #include <table/protocol.h>
 
 #define MSGBUFSZ 256
+#define TABLE_LENGTH 4096
 
-#define GET "get"
-#define SET "set"
-#define INC "inc"
-#define DEC "dec"
+static struct server table[TABLE_LENGTH];
+static _Atomic unsigned long count, total;
 
-/* no locks because each monitor thread controls a single key (too tired)  */
-static unsigned long table[TABLE_LENGTH] = { 0 };
+/* guards enroll, grab, release and rr  */
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned long rr;
 
 static int
-get_handler (int sock, char msg[MSGBUFSZ])
+parse_key (const char *p, unsigned long *key)
 {
-  unsigned long key;
-  char *p, *end;
-
-  p = msg + sizeof GET;
+  unsigned long n;
+  char *end;
 
   errno = 0;
-  key = strtoul (p, &end, 10);
+  n = strtoul (p, &end, 10);
 
-  if (*end != '\0' || errno == ERANGE || key >= TABLE_LENGTH)
+  if (*end != '\0' || errno == ERANGE || n >= count)
     return -1;
 
-  snprintf (msg, MSGBUFSZ, "%lu", table[key]);
+  *key = n;
+
+  return 0;
+}
+
+static int
+enroll_handler (int sock, char msg[MSGBUFSZ])
+{
+  char ip[TABLE_ADDRSTRLEN], port[TABLE_PORTSTRLEN], *p, *sp;
+  size_t iplen, portlen;
+  unsigned long key, n;
+
+  p = msg + sizeof "enroll";
+
+  if ((sp = strchr (p, ' ')) == NULL)
+    return -1;
+
+  iplen = (size_t)(sp - p);
+  portlen = strlen (sp + 1);
+
+  if (iplen == 0 || iplen >= sizeof ip || portlen == 0
+      || portlen >= sizeof port)
+    return -1;
+
+  memcpy (ip, p, iplen);
+  ip[iplen] = '\0';
+  memcpy (port, sp + 1, portlen + 1);
+
+  pthread_mutex_lock (&lock);
+  n = count;
+
+  for (key = 0; key < n; ++key)
+    if (!strcmp (table[key].ip, ip) && !strcmp (table[key].port, port))
+      break;
+
+  if (key == n)
+    {
+      if (n == TABLE_LENGTH)
+        {
+          pthread_mutex_unlock (&lock);
+          return -1;
+        }
+
+      memcpy (table[key].ip, ip, sizeof ip);
+      memcpy (table[key].port, port, sizeof port);
+
+      /* publish only after the entry is filled  */
+      count = n + 1;
+    }
+
+  pthread_mutex_unlock (&lock);
+
+  snprintf (msg, MSGBUFSZ, "%lu", key);
 
   if (net_io_sendln (sock, msg, MSGBUFSZ) < 0)
     return -1;
@@ -46,64 +96,140 @@ get_handler (int sock, char msg[MSGBUFSZ])
 }
 
 static int
-set_handler (char msg[MSGBUFSZ])
+up_handler (char msg[MSGBUFSZ])
 {
-  unsigned long key, val;
-  char *p, *end;
+  unsigned long key;
 
-  p = msg + sizeof SET;
-
-  errno = 0;
-  key = strtoul (p, &end, 10);
-
-  if (*end != ' ' || errno == ERANGE || key >= TABLE_LENGTH)
+  if (parse_key (msg + sizeof "up", &key) < 0)
     return -1;
 
-  p = end + 1;
-  val = strtoul (p, &end, 10);
-
-  if (*end != '\0' || errno == ERANGE)
-    return -1;
-
-  table[key] = val;
+  table[key].state = 1;
 
   return 0;
 }
 
 static int
-inc_handler (char msg[MSGBUFSZ])
+down_handler (char msg[MSGBUFSZ])
 {
   unsigned long key;
-  char *p, *end;
 
-  p = msg + sizeof INC;
-
-  errno = 0;
-  key = strtoul (p, &end, 10);
-
-  if (*end != '\0' || errno == ERANGE || key >= TABLE_LENGTH)
+  if (parse_key (msg + sizeof "down", &key) < 0)
     return -1;
 
-  ++table[key];
+  table[key].state = 0;
 
   return 0;
 }
 
 static int
-dec_handler (char msg[MSGBUFSZ])
+grab_handler (int sock, char msg[MSGBUFSZ])
 {
-  unsigned long key;
-  char *p, *end;
+  unsigned long i, j, n, key, conns = 0;
+  char *p;
 
-  p = msg + sizeof DEC;
+  p = msg + sizeof "grab";
 
-  errno = 0;
-  key = strtoul (p, &end, 10);
+  pthread_mutex_lock (&lock);
+  n = count;
+  key = n;
 
-  if (*end != '\0' || errno == ERANGE || key >= TABLE_LENGTH)
+  if (!strcmp (p, "lc"))
+    {
+      for (i = 0; i < n; ++i)
+        if (table[i].state && (key == n || table[i].conns < table[key].conns))
+          key = i;
+    }
+
+  else if (!strcmp (p, "rr"))
+    {
+      for (j = 0; j < n; ++j)
+        {
+          i = (rr + j) % n;
+
+          if (table[i].state)
+            {
+              key = i;
+              rr = i + 1;
+              break;
+            }
+        }
+    }
+
+  else
+    {
+      pthread_mutex_unlock (&lock);
+      return -1;
+    }
+
+  if (key < n)
+    {
+      conns = ++table[key].conns;
+      ++total;
+    }
+
+  pthread_mutex_unlock (&lock);
+
+  if (key == n)
+    snprintf (msg, MSGBUFSZ, "none");
+
+  else
+    snprintf (msg, MSGBUFSZ, "%lu %s %s up %lu", key, table[key].ip,
+              table[key].port, conns);
+
+  if (net_io_sendln (sock, msg, MSGBUFSZ) < 0)
     return -1;
 
-  --table[key];
+  return 0;
+}
+
+static int
+release_handler (char msg[MSGBUFSZ])
+{
+  unsigned long key;
+
+  if (parse_key (msg + sizeof "release", &key) < 0)
+    return -1;
+
+  pthread_mutex_lock (&lock);
+
+  if (table[key].conns == 0)
+    {
+      pthread_mutex_unlock (&lock);
+      return -1;
+    }
+
+  --table[key].conns;
+  --total;
+
+  pthread_mutex_unlock (&lock);
+
+  return 0;
+}
+
+static int
+status_handler (int sock, char msg[MSGBUFSZ])
+{
+  unsigned long key;
+
+  if (parse_key (msg + sizeof "status", &key) < 0)
+    return -1;
+
+  snprintf (msg, MSGBUFSZ, "%s %s %s %lu", table[key].ip, table[key].port,
+            table[key].state ? "up" : "down", (unsigned long)table[key].conns);
+
+  if (net_io_sendln (sock, msg, MSGBUFSZ) < 0)
+    return -1;
+
+  return 0;
+}
+
+static int
+total_handler (int sock, char msg[MSGBUFSZ])
+{
+  snprintf (msg, MSGBUFSZ, "%lu", (unsigned long)total);
+
+  if (net_io_sendln (sock, msg, MSGBUFSZ) < 0)
+    return -1;
 
   return 0;
 }
@@ -134,17 +260,26 @@ serve (void *arg)
         }
 
       /* handle command  */
-      if (!strncmp (msg, GET " ", sizeof GET))
-        ret = get_handler (cfd, msg);
+      if (!strncmp (msg, "enroll ", sizeof "enroll"))
+        ret = enroll_handler (cfd, msg);
 
-      else if (!strncmp (msg, SET " ", sizeof SET))
-        ret = set_handler (msg);
+      else if (!strncmp (msg, "up ", sizeof "up"))
+        ret = up_handler (msg);
 
-      else if (!strncmp (msg, INC " ", sizeof INC))
-        ret = inc_handler (msg);
+      else if (!strncmp (msg, "down ", sizeof "down"))
+        ret = down_handler (msg);
 
-      else if (!strncmp (msg, DEC " ", sizeof DEC))
-        ret = dec_handler (msg);
+      else if (!strncmp (msg, "grab ", sizeof "grab"))
+        ret = grab_handler (cfd, msg);
+
+      else if (!strncmp (msg, "release ", sizeof "release"))
+        ret = release_handler (msg);
+
+      else if (!strncmp (msg, "status ", sizeof "status"))
+        ret = status_handler (cfd, msg);
+
+      else if (!strcmp (msg, "total"))
+        ret = total_handler (cfd, msg);
 
       else
         break;
