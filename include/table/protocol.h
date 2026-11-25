@@ -3,6 +3,7 @@
 
 #include <netinet/in.h>
 
+#define TABLE_LENGTH 4096
 #define TABLE_PORT "3030"
 
 #define TABLE_ADDRSTRLEN INET_ADDRSTRLEN

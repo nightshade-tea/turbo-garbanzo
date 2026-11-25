@@ -14,7 +14,6 @@
 #include <table/protocol.h>
 
 #define MSGBUFSZ 256
-#define TABLE_LENGTH 4096
 
 static struct server table[TABLE_LENGTH];
 static _Atomic unsigned long count, total;
