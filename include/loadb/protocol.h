@@ -1,0 +1,6 @@
+#ifndef LOADB_PROTOCOL_H
+#define LOADB_PROTOCOL_H
+
+#define LOADB_PORT "3032"
+
+#endif /* LOADB_PROTOCOL_H  */
