@@ -1,4 +1,6 @@
+#include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -6,6 +8,12 @@
 #include <errno.h>
 
 #include <net/tcp.h>
+
+struct conn
+{
+  void (*connfn) (int connfd);
+  int connfd;
+};
 
 static int
 eai_errno (int rc)
@@ -96,5 +104,48 @@ err_connect:
   close (sfd);
 err_socket:
   freeaddrinfo (res);
+  return -1;
+}
+
+static void *
+conn_start (void *arg)
+{
+  struct conn c = *(struct conn *)arg;
+
+  free (arg);
+  c.connfn (c.connfd);
+
+  return NULL;
+}
+
+int
+net_tcp_serve (int listenfd, void (*connfn) (int connfd))
+{
+  struct conn *c;
+  pthread_t t;
+  int connfd, rc;
+
+  if ((connfd = accept (listenfd, NULL, NULL)) < 0)
+    return -1;
+
+  if ((c = malloc (sizeof *c)) == NULL)
+    goto err_malloc;
+
+  c->connfn = connfn;
+  c->connfd = connfd;
+
+  if ((rc = pthread_create (&t, NULL, conn_start, c)))
+    {
+      errno = rc;
+      goto err_pthread_create;
+    }
+
+  pthread_detach (t);
+  return 0;
+
+err_pthread_create:
+  free (c);
+err_malloc:
+  close (connfd);
   return -1;
 }

@@ -1,6 +1,5 @@
 #include <errno.h>
 #include <limits.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,10 +57,10 @@ relay (void *arg)
   return NULL;
 }
 
-static void *
-serve (void *arg)
+static void
+serve (int cfd)
 {
-  int cfd = (int)(intptr_t)arg, tfd, sfd = -1, i, rc;
+  int tfd, sfd = -1, i, rc;
   struct relay fwd, back;
   struct server srv;
   unsigned long key;
@@ -111,15 +110,12 @@ err_pthread_create:
 err_net_tcp_connect:
   close (tfd);
   close (cfd);
-
-  return NULL;
 }
 
 int
 main (int argc, char *argv[])
 {
-  int lfd, cfd, rc;
-  pthread_t t;
+  int lfd;
 
   if (argc != 4)
     usage ();
@@ -134,21 +130,6 @@ main (int argc, char *argv[])
     return 1;
 
   for (;;)
-    {
-      if ((cfd = accept (lfd, NULL, NULL)) < 0)
-        {
-          warn ("accept");
-          continue;
-        }
-
-      if ((rc = pthread_create (&t, NULL, serve, (void *)(intptr_t)cfd)))
-        {
-          errno = rc;
-          warn ("pthread_create");
-          close (cfd);
-          continue;
-        }
-
-      pthread_detach (t);
-    }
+    if (net_tcp_serve (lfd, serve) < 0)
+      warn ("net_tcp_serve");
 }

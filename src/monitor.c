@@ -18,7 +18,6 @@
 
 #include <errno.h>
 #include <limits.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,10 +79,10 @@ usage (void)
   exit (2);
 }
 
-static void *
-manage (void *arg)
+static void
+manage (int sfd)
 {
-  int sfd = (int)(intptr_t)arg, tfd, one = 1, idle = 2, intvl = 1, cnt = 2;
+  int tfd, one = 1, idle = 2, intvl = 1, cnt = 2;
   char msg[MSGBUFSZ], *ip, *port, c;
   unsigned long key;
   ssize_t n;
@@ -170,20 +169,18 @@ manage (void *arg)
   close (sfd);
   close (tfd);
 
-  return NULL;
+  return;
 
 err_strlen:
 err_strchr:
 err_net_io_recvln:
   close (sfd);
-  return NULL;
 }
 
 int
 main (int argc, char *argv[])
 {
-  int lfd, cfd, rc;
-  pthread_t t;
+  int lfd;
   size_t i;
 
   if (argc != 3)
@@ -203,21 +200,6 @@ main (int argc, char *argv[])
   pr_debugx ("listening on %s:%s", argv[1], MONITOR_PORT);
 
   for (;;)
-    {
-      if ((cfd = accept (lfd, NULL, NULL)) < 0)
-        {
-          pr_warn ("accept");
-          continue;
-        }
-
-      if ((rc = pthread_create (&t, NULL, manage, (void *)(intptr_t)cfd)))
-        {
-          errno = rc;
-          pr_warn ("pthread_create");
-          close (cfd);
-          continue;
-        }
-
-      pthread_detach (t);
-    }
+    if (net_tcp_serve (lfd, manage) < 0)
+      pr_warn ("net_tcp_serve");
 }

@@ -1,6 +1,5 @@
 #include <errno.h>
 #include <limits.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,10 +43,9 @@ mon (void *arg)
   errx (1, "monitor closed the connection");
 }
 
-static void *
-serve (void *arg)
+static void
+serve (int cfd)
 {
-  int cfd = (int)(intptr_t)arg;
   char line[64];
 
   for (;;)
@@ -67,13 +65,12 @@ serve (void *arg)
     }
 
   close (cfd);
-  return NULL;
 }
 
 int
 main (int argc, char *argv[])
 {
-  int lfd, cfd, rc;
+  int lfd, rc;
   pthread_t t;
 
   if (argc != 4)
@@ -91,21 +88,6 @@ main (int argc, char *argv[])
   pthread_detach (t);
 
   for (;;)
-    {
-      if ((cfd = accept (lfd, NULL, NULL)) < 0)
-        {
-          warn ("accept");
-          continue;
-        }
-
-      if ((rc = pthread_create (&t, NULL, serve, (void *)(intptr_t)cfd)))
-        {
-          errno = rc;
-          warn ("pthread_create");
-          close (cfd);
-          continue;
-        }
-
-      pthread_detach (t);
-    }
+    if (net_tcp_serve (lfd, serve) < 0)
+      warn ("net_tcp_serve");
 }

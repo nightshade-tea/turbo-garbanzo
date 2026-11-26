@@ -7,4 +7,7 @@ int net_tcp_listen (const char *host, const char *port, int backlog);
 /* connect to host:port  */
 int net_tcp_connect (const char *host, const char *port);
 
+/* accept a connection on listenfd and spawn a connfn thread to handle it  */
+int net_tcp_serve (int listenfd, void (*connfn) (int connfd));
+
 #endif /* NET_TCP_H  */
