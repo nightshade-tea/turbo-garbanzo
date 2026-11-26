@@ -1,11 +1,38 @@
 #include <errno.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
 #include <net/io.h>
 #include <table/protocol.h>
 
-#define MSGBUFSZ 128
+#define MSGBUFSZ 128 /* rw buf for table replies  */
+
+static int
+parse_ulong (const char *s, char term, unsigned long *n, char **end)
+{
+  unsigned long v;
+  char *e;
+
+  errno = 0;
+  v = strtoul (s, &e, 10);
+
+  if (errno == ERANGE)
+    return -1;
+
+  if (e == s || *e != term)
+    {
+      errno = EBADMSG;
+      return -1;
+    }
+
+  *n = v;
+
+  if (end != NULL)
+    *end = e;
+
+  return 0;
+}
 
 static int
 parse_server (const char *s, struct server *srv)
@@ -36,12 +63,33 @@ parse_server (const char *s, struct server *srv)
   return 0;
 }
 
+static int
+ok_cmd (int sock, const char *cmd, unsigned long key)
+{
+  char msg[MSGBUFSZ];
+
+  snprintf (msg, sizeof msg, "%s %lu", cmd, key);
+
+  if (net_io_sendln (sock, msg, sizeof msg) < 0)
+    return -1;
+
+  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+    return -1;
+
+  if (strcmp (msg, "ok"))
+    {
+      errno = EBADMSG;
+      return -1;
+    }
+
+  return 0;
+}
+
 int
 table_protocol_enroll (int sock, const char *ip, const char *port,
                        unsigned long *key)
 {
-  char msg[MSGBUFSZ], *end;
-  unsigned long n;
+  char msg[MSGBUFSZ];
 
   snprintf (msg, sizeof msg, "enroll %s %s", ip, port);
 
@@ -51,65 +99,19 @@ table_protocol_enroll (int sock, const char *ip, const char *port,
   if (net_io_recvln (sock, msg, sizeof msg) < 0)
     return -1;
 
-  errno = 0;
-  n = strtoul (msg, &end, 10);
-
-  if (errno == ERANGE)
-    return -1;
-
-  if (end == msg || *end != '\0')
-    {
-      errno = EBADMSG;
-      return -1;
-    }
-
-  *key = n;
-
-  return 0;
+  return parse_ulong (msg, '\0', key, NULL);
 }
 
 int
 table_protocol_up (int sock, unsigned long key)
 {
-  char msg[MSGBUFSZ];
-
-  snprintf (msg, sizeof msg, "up %lu", key);
-
-  if (net_io_sendln (sock, msg, sizeof msg) < 0)
-    return -1;
-
-  if (net_io_recvln (sock, msg, sizeof msg) < 0)
-    return -1;
-
-  if (strcmp (msg, "ok"))
-    {
-      errno = EBADMSG;
-      return -1;
-    }
-
-  return 0;
+  return ok_cmd (sock, "up", key);
 }
 
 int
 table_protocol_down (int sock, unsigned long key)
 {
-  char msg[MSGBUFSZ];
-
-  snprintf (msg, sizeof msg, "down %lu", key);
-
-  if (net_io_sendln (sock, msg, sizeof msg) < 0)
-    return -1;
-
-  if (net_io_recvln (sock, msg, sizeof msg) < 0)
-    return -1;
-
-  if (strcmp (msg, "ok"))
-    {
-      errno = EBADMSG;
-      return -1;
-    }
-
-  return 0;
+  return ok_cmd (sock, "down", key);
 }
 
 int
@@ -130,17 +132,8 @@ table_protocol_grab (int sock, const char *policy, unsigned long *key,
   if (!strcmp (msg, "none"))
     return 1;
 
-  errno = 0;
-  n = strtoul (msg, &end, 10);
-
-  if (errno == ERANGE)
+  if (parse_ulong (msg, ' ', &n, &end) < 0)
     return -1;
-
-  if (end == msg || *end != ' ')
-    {
-      errno = EBADMSG;
-      return -1;
-    }
 
   if (parse_server (end + 1, srv) < 0)
     return -1;
@@ -153,23 +146,7 @@ table_protocol_grab (int sock, const char *policy, unsigned long *key,
 int
 table_protocol_release (int sock, unsigned long key)
 {
-  char msg[MSGBUFSZ];
-
-  snprintf (msg, sizeof msg, "release %lu", key);
-
-  if (net_io_sendln (sock, msg, sizeof msg) < 0)
-    return -1;
-
-  if (net_io_recvln (sock, msg, sizeof msg) < 0)
-    return -1;
-
-  if (strcmp (msg, "ok"))
-    {
-      errno = EBADMSG;
-      return -1;
-    }
-
-  return 0;
+  return ok_cmd (sock, "release", key);
 }
 
 int
@@ -191,8 +168,7 @@ table_protocol_status (int sock, unsigned long key, struct server *srv)
 int
 table_protocol_total (int sock, unsigned long *total)
 {
-  char msg[MSGBUFSZ], *end;
-  unsigned long n;
+  char msg[MSGBUFSZ];
 
   if (net_io_sendln (sock, "total", sizeof "total") < 0)
     return -1;
@@ -200,19 +176,5 @@ table_protocol_total (int sock, unsigned long *total)
   if (net_io_recvln (sock, msg, sizeof msg) < 0)
     return -1;
 
-  errno = 0;
-  n = strtoul (msg, &end, 10);
-
-  if (errno == ERANGE)
-    return -1;
-
-  if (end == msg || *end != '\0')
-    {
-      errno = EBADMSG;
-      return -1;
-    }
-
-  *total = n;
-
-  return 0;
+  return parse_ulong (msg, '\0', total, NULL);
 }
