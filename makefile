@@ -30,10 +30,10 @@ progs := $(sort $(basename $(notdir $(wildcard $(src)/*.c))))
 bins  := $(progs:%=$(build)/bin/%)
 
 # libraries per program, dependents first (static link order)
-loadb_libs   := table net
-monitor_libs := table net
+loadb_libs   := tbl net
+monitor_libs := tbl net
 ping_libs    := net
-pong_libs    := net
+pong_libs    := mon net
 table_libs   := net
 
 # settings ------------------------------------------------------------------- #

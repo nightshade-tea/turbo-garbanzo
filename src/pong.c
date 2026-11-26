@@ -4,14 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <pthread.h>
-#include <sys/socket.h>
-#include <err.h>
 
+#include <log/pr.h>
 #include <net/io.h>
 #include <net/tcp.h>
 #include <ping/protocol.h>
-#include <monitor/protocol.h>
+#include <mon/protocol.h>
 
 [[noreturn]]
 static void
@@ -22,25 +20,10 @@ usage (void)
 }
 
 [[noreturn]]
-static void *
-mon (void *arg)
+static void
+lost (void)
 {
-  char **argv = arg, msg[64], c;
-  int monfd;
-
-  if ((monfd = net_tcp_connect (argv[3], MONITOR_PORT)) < 0)
-    exit (1);
-
-  snprintf (msg, sizeof msg, "%s %s", argv[1], argv[2]);
-
-  if (net_io_sendln (monfd, msg, sizeof msg) < 0)
-    err (1, "send");
-
-  /* the monitor never sends, so returning means it's gone  */
-  while (recv (monfd, &c, 1, 0) < 0 && errno == EINTR)
-    ;
-
-  errx (1, "monitor closed the connection");
+  pr_err (1, "lost connection to monitor");
 }
 
 static void
@@ -70,24 +53,18 @@ serve (int cfd)
 int
 main (int argc, char *argv[])
 {
-  int lfd, rc;
-  pthread_t t;
+  int lfd;
 
   if (argc != 4)
     usage ();
 
   if ((lfd = net_tcp_listen (argv[1], argv[2], INT_MAX)) < 0)
-    return 1;
+    pr_err (1, "net_tcp_listen: can't listen on %s:%s", argv[1], argv[2]);
 
-  if ((rc = pthread_create (&t, NULL, mon, argv)))
-    {
-      errno = rc;
-      err (1, "pthread_create");
-    }
-
-  pthread_detach (t);
+  if (mon_enroll (argv[3], argv[1], argv[2], lost) < 0)
+    pr_err (1, "mon_enroll: can't reach monitor (%s)", argv[3]);
 
   for (;;)
     if (net_tcp_serve (lfd, serve) < 0)
-      warn ("net_tcp_serve");
+      pr_warn ("net_tcp_serve");
 }

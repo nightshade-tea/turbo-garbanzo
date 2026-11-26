@@ -10,11 +10,11 @@
 
 #include <net/io.h>
 #include <net/tcp.h>
-#include <table/protocol.h>
+#include <tbl/protocol.h>
 
 #define MSGBUFSZ 256
 
-static struct server table[TABLE_LENGTH];
+static struct server table[TBL_LENGTH];
 static _Atomic unsigned long count, total;
 
 /* guards enroll, grab, release and rr  */
@@ -41,7 +41,7 @@ parse_key (const char *p, unsigned long *key)
 static int
 enroll_handler (int sock, char msg[MSGBUFSZ])
 {
-  char ip[TABLE_ADDRSTRLEN], port[TABLE_PORTSTRLEN], *p, *sp;
+  char ip[TBL_ADDRSTRLEN], port[TBL_PORTSTRLEN], *p, *sp;
   size_t iplen, portlen;
   unsigned long key, n;
 
@@ -70,7 +70,7 @@ enroll_handler (int sock, char msg[MSGBUFSZ])
 
   if (key == n)
     {
-      if (n == TABLE_LENGTH)
+      if (n == TBL_LENGTH)
         {
           pthread_mutex_unlock (&lock);
           return -1;
@@ -313,7 +313,7 @@ main (int argc, char *argv[])
   else
     host = "0.0.0.0";
 
-  if ((lfd = net_tcp_listen (host, TABLE_PORT, INT_MAX)) < 0)
+  if ((lfd = net_tcp_listen (host, TBL_PORT, INT_MAX)) < 0)
     return 1;
 
   for (;;)

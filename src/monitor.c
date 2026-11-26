@@ -5,7 +5,7 @@
  * servers in table, so whenever a server starts it has to set its state to
  * up, and whenever a server stops/crashes it has to set its state to down.
  *
- * to achieve this, the monitor listens on MONITOR_PORT and the servers connect
+ * to achieve this, the monitor listens on MON_PORT and the servers connect
  * to it on startup. each server connection (sfd) gets a manager thread that
  * enrolls the server on table and checks that the server is alive by setting
  * SO_KEEPALIVE on sfd. if a server dies, the keepalive will fail and the
@@ -29,8 +29,8 @@
 #include <log/pr.h>
 #include <net/io.h>
 #include <net/tcp.h>
-#include <monitor/protocol.h>
-#include <table/protocol.h>
+#include <mon/protocol.h>
+#include <tbl/protocol.h>
 
 #define MSGBUFSZ 64 /* rw buf for sfd  */
 
@@ -67,7 +67,7 @@ static struct slot
 {
   pthread_mutex_t slock; /* guards sfd and the key's up/down  */
   int sfd;               /* connection watching the key, or -1  */
-} slots[TABLE_LENGTH];   /* one slot for each key  */
+} slots[TBL_LENGTH];     /* one slot for each key  */
 
 static const char *tblhost;
 
@@ -105,7 +105,7 @@ manage (int sfd)
   /* split msg into "<ip>" "<port>"  */
   *port++ = '\0';
 
-  if (strlen (ip) >= TABLE_ADDRSTRLEN || strlen (port) >= TABLE_PORTSTRLEN)
+  if (strlen (ip) >= TBL_ADDRSTRLEN || strlen (port) >= TBL_PORTSTRLEN)
     {
       pr_warnx ("ip:port pair is too long (%s:%s)", ip, port);
       goto err_strlen;
@@ -118,11 +118,11 @@ manage (int sfd)
       || setsockopt (sfd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof cnt))
     pr_err (1, "setsockopt");
 
-  if ((tfd = net_tcp_connect (tblhost, TABLE_PORT)) < 0)
+  if ((tfd = net_tcp_connect (tblhost, TBL_PORT)) < 0)
     pr_err (1, "net_tcp_connect: can't reach table (%s)", tblhost);
 
-  if (table_protocol_enroll (tfd, ip, port, &key) < 0)
-    pr_err (1, "table_protocol_enroll: enroll failed (%s:%s)", ip, port);
+  if (tbl_enroll (tfd, ip, port, &key) < 0)
+    pr_err (1, "tbl_enroll: enroll failed (%s:%s)", ip, port);
 
   pthread_mutex_lock (&slots[key].slock);
 
@@ -135,8 +135,8 @@ manage (int sfd)
 
   slots[key].sfd = sfd;
 
-  if (table_protocol_up (tfd, key) < 0)
-    pr_err (1, "table_protocol_up: up failed (key %lu)", key);
+  if (tbl_up (tfd, key) < 0)
+    pr_err (1, "tbl_up: up failed (key %lu)", key);
 
   pthread_mutex_unlock (&slots[key].slock);
 
@@ -157,8 +157,8 @@ manage (int sfd)
   /* check if another thread took over  */
   if (slots[key].sfd == sfd)
     {
-      if (table_protocol_down (tfd, key) < 0)
-        pr_err (1, "table_protocol_down: down failed (key %lu)", key);
+      if (tbl_down (tfd, key) < 0)
+        pr_err (1, "tbl_down: down failed (key %lu)", key);
 
       slots[key].sfd = -1;
       pr_debugx ("%s:%s (key %lu) state down", ip, port, key);
@@ -188,16 +188,16 @@ main (int argc, char *argv[])
 
   tblhost = argv[2];
 
-  for (i = 0; i < TABLE_LENGTH; ++i)
+  for (i = 0; i < TBL_LENGTH; ++i)
     {
       pthread_mutex_init (&slots[i].slock, NULL);
       slots[i].sfd = -1;
     }
 
-  if ((lfd = net_tcp_listen (argv[1], MONITOR_PORT, INT_MAX)) < 0)
-    pr_err (1, "net_tcp_listen: can't listen on %s:%s", argv[1], MONITOR_PORT);
+  if ((lfd = net_tcp_listen (argv[1], MON_PORT, INT_MAX)) < 0)
+    pr_err (1, "net_tcp_listen: can't listen on %s:%s", argv[1], MON_PORT);
 
-  pr_debugx ("listening on %s:%s", argv[1], MONITOR_PORT);
+  pr_debugx ("listening on %s:%s", argv[1], MON_PORT);
 
   for (;;)
     if (net_tcp_serve (lfd, manage) < 0)

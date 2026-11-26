@@ -11,7 +11,7 @@
 #include <net/io.h>
 #include <net/tcp.h>
 #include <loadb/protocol.h>
-#include <table/protocol.h>
+#include <tbl/protocol.h>
 
 #define CONNECT_TRIES 3
 
@@ -66,12 +66,12 @@ serve (int cfd)
   unsigned long key;
   pthread_t t;
 
-  if ((tfd = net_tcp_connect (tblhost, TABLE_PORT)) < 0)
+  if ((tfd = net_tcp_connect (tblhost, TBL_PORT)) < 0)
     exit (1);
 
   for (i = 0; i < CONNECT_TRIES; ++i)
     {
-      if ((rc = table_protocol_grab (tfd, policy, &key, &srv)) < 0)
+      if ((rc = tbl_grab (tfd, policy, &key, &srv)) < 0)
         errx (1, "grab failed");
 
       /* no server up  */
@@ -81,7 +81,7 @@ serve (int cfd)
       if ((sfd = net_tcp_connect (srv.ip, srv.port)) >= 0)
         break;
 
-      if (table_protocol_release (tfd, key) < 0)
+      if (tbl_release (tfd, key) < 0)
         errx (1, "release failed");
     }
 
@@ -104,7 +104,7 @@ serve (int cfd)
 err_pthread_create:
   close (sfd);
 
-  if (table_protocol_release (tfd, key) < 0)
+  if (tbl_release (tfd, key) < 0)
     errx (1, "release failed");
 
 err_net_tcp_connect:

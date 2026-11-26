@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include <net/io.h>
-#include <table/protocol.h>
+#include <tbl/protocol.h>
 
 #define MSGBUFSZ 128 /* rw buf for table replies  */
 
@@ -86,8 +86,7 @@ ok_cmd (int sock, const char *cmd, unsigned long key)
 }
 
 int
-table_protocol_enroll (int sock, const char *ip, const char *port,
-                       unsigned long *key)
+tbl_enroll (int sock, const char *ip, const char *port, unsigned long *key)
 {
   char msg[MSGBUFSZ];
 
@@ -103,20 +102,19 @@ table_protocol_enroll (int sock, const char *ip, const char *port,
 }
 
 int
-table_protocol_up (int sock, unsigned long key)
+tbl_up (int sock, unsigned long key)
 {
   return ok_cmd (sock, "up", key);
 }
 
 int
-table_protocol_down (int sock, unsigned long key)
+tbl_down (int sock, unsigned long key)
 {
   return ok_cmd (sock, "down", key);
 }
 
 int
-table_protocol_grab (int sock, const char *policy, unsigned long *key,
-                     struct server *srv)
+tbl_grab (int sock, const char *policy, unsigned long *key, struct server *srv)
 {
   char msg[MSGBUFSZ], *end;
   unsigned long n;
@@ -144,13 +142,13 @@ table_protocol_grab (int sock, const char *policy, unsigned long *key,
 }
 
 int
-table_protocol_release (int sock, unsigned long key)
+tbl_release (int sock, unsigned long key)
 {
   return ok_cmd (sock, "release", key);
 }
 
 int
-table_protocol_status (int sock, unsigned long key, struct server *srv)
+tbl_status (int sock, unsigned long key, struct server *srv)
 {
   char msg[MSGBUFSZ];
 
@@ -166,7 +164,7 @@ table_protocol_status (int sock, unsigned long key, struct server *srv)
 }
 
 int
-table_protocol_total (int sock, unsigned long *total)
+tbl_total (int sock, unsigned long *total)
 {
   char msg[MSGBUFSZ];
 
