@@ -40,7 +40,7 @@ table_libs   := net
 
 # compiler, preprocessor flags, compiler flags
 CC       := gcc
-CPPFLAGS += -I$(inc) -MMD -MP -D_DEFAULT_SOURCE
+CPPFLAGS += -I$(inc) -MMD -MP -D_GNU_SOURCE
 CFLAGS   += -std=c23 -pthread -Wall -Wextra -Wconversion -Wstrict-prototypes \
             -Wmissing-prototypes -Wshadow -Wundef -Wdouble-promotion
 LDFLAGS  += -pthread

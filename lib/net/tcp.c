@@ -4,9 +4,29 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <errno.h>
-#include <err.h>
 
 #include <net/tcp.h>
+
+static int
+eai_errno (int rc)
+{
+  switch (rc)
+    {
+    case EAI_SYSTEM:
+      return errno;
+    case EAI_AGAIN:
+      return EAGAIN;
+    case EAI_MEMORY:
+      return ENOMEM;
+    case EAI_NONAME:
+    case EAI_NODATA:
+    case EAI_ADDRFAMILY:
+    case EAI_FAIL:
+      return EHOSTUNREACH;
+    default: /* EAI_SERVICE, EAI_FAMILY, EAI_SOCKTYPE, EAI_BADFLAGS  */
+      return EINVAL;
+    }
+}
 
 int
 net_tcp_listen (const char *host, const char *port, int backlog)
@@ -20,38 +40,21 @@ net_tcp_listen (const char *host, const char *port, int backlog)
 
   if ((rc = getaddrinfo (host, port, &hints, &res)))
     {
-      if (rc == EAI_SYSTEM)
-        warn ("getaddrinfo");
-
-      else
-        warnx ("getaddrinfo: %s", gai_strerror (rc));
-
-      goto err_getaddrinfo;
+      errno = eai_errno (rc);
+      return -1;
     }
 
   if ((sfd = socket (res->ai_family, res->ai_socktype, res->ai_protocol)) < 0)
-    {
-      warn ("socket");
-      goto err_socket;
-    }
+    goto err_socket;
 
-  if (setsockopt (sfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one))
-    {
-      warn ("setsockopt");
-      goto err_setsockopt;
-    }
+  if (setsockopt (sfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one) < 0)
+    goto err_setsockopt;
 
   if (bind (sfd, res->ai_addr, res->ai_addrlen) < 0)
-    {
-      warn ("bind");
-      goto err_bind;
-    }
+    goto err_bind;
 
   if (listen (sfd, backlog) < 0)
-    {
-      warn ("listen");
-      goto err_listen;
-    }
+    goto err_listen;
 
   freeaddrinfo (res);
   return sfd;
@@ -62,7 +65,6 @@ err_setsockopt:
   close (sfd);
 err_socket:
   freeaddrinfo (res);
-err_getaddrinfo:
   return -1;
 }
 
@@ -77,21 +79,15 @@ net_tcp_connect (const char *host, const char *port)
 
   if ((rc = getaddrinfo (host, port, &hints, &res)))
     {
-      warnx ("getaddrinfo: %s", gai_strerror (rc));
-      goto err_getaddrinfo;
+      errno = eai_errno (rc);
+      return -1;
     }
 
   if ((sfd = socket (res->ai_family, res->ai_socktype, res->ai_protocol)) < 0)
-    {
-      warn ("socket");
-      goto err_socket;
-    }
+    goto err_socket;
 
-  if (connect (sfd, res->ai_addr, res->ai_addrlen))
-    {
-      warn ("connect");
-      goto err_connect;
-    }
+  if (connect (sfd, res->ai_addr, res->ai_addrlen) < 0)
+    goto err_connect;
 
   freeaddrinfo (res);
   return sfd;
@@ -100,6 +96,5 @@ err_connect:
   close (sfd);
 err_socket:
   freeaddrinfo (res);
-err_getaddrinfo:
   return -1;
 }
