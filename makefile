@@ -21,20 +21,20 @@ hdrs := $(shell find $(lib) $(src) $(inc) -name '*.h')
 objs := $(srcs:$(root)/%.c=$(build)/obj/%.o)
 deps := $(objs:.o=.d)
 
-# static libraries: lib/<lib>/ -> build/<lib>.a
+# static libraries: lib/<lib>/ -> build/lib/<lib>.a
 libs  := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard $(lib)/*/*.c)))))
-arqs  := $(libs:%=$(build)/%.a)
+arqs  := $(libs:%=$(build)/lib/%.a)
 
-# programs: src/<prog>/ -> build/<prog>
-progs := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard $(src)/*/*.c)))))
-bins  := $(progs:%=$(build)/%)
+# programs: src/<prog>.c -> build/bin/<prog>
+progs := $(sort $(basename $(notdir $(wildcard $(src)/*.c))))
+bins  := $(progs:%=$(build)/bin/%)
 
 # libraries per program, dependents first (static link order)
 loadb_libs   := table net
 monitor_libs := table net
 ping_libs    := net
 pong_libs    := net
-tblsrv_libs  := net
+table_libs   := net
 
 # settings ------------------------------------------------------------------- #
 
@@ -68,15 +68,15 @@ $(build)/obj/%.o : $(root)/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
-# archive: build/obj/lib/<lib>/*.o -> build/<lib>.a
-$(foreach l,$(libs),$(eval $(build)/$(l).a : $(call objs_of,lib/$(l))))
+# archive: build/obj/lib/<lib>/*.o -> build/lib/<lib>.a
+$(foreach l,$(libs),$(eval $(build)/lib/$(l).a : $(call objs_of,lib/$(l))))
 $(arqs) :
 	@mkdir -p $(@D)
 	rm -f $@
 	$(AR) rcs $@ $^
 
-# link: build/obj/src/<prog>/*.o + build/<lib>.a -> build/<prog>
-$(foreach p,$(progs),$(eval $(build)/$(p) : $(call objs_of,src/$(p)) $($(p)_libs:%=$(build)/%.a)))
+# link: build/obj/src/<prog>.o + build/lib/<lib>.a -> build/bin/<prog>
+$(foreach p,$(progs),$(eval $(build)/bin/$(p) : $(build)/obj/src/$(p).o $($(p)_libs:%=$(build)/lib/%.a)))
 $(bins) :
 	@mkdir -p $(@D)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)

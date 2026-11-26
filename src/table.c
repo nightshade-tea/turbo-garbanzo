@@ -246,7 +246,7 @@ total_handler (int sock, char msg[MSGBUFSZ])
 static void
 usage (void)
 {
-  fprintf (stderr, "usage: tblsrv [host]\n");
+  fprintf (stderr, "usage: table [host]\n");
   exit (2);
 }
 

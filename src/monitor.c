@@ -2,17 +2,17 @@
  * src/monitor/monitor.c
  *
  * the monitor is responsible for enrolling and managing the state of the
- * servers in tblsrv, so whenever a server starts it has to set its state to
+ * servers in table, so whenever a server starts it has to set its state to
  * up, and whenever a server stops/crashes it has to set its state to down.
  *
  * to achieve this, the monitor listens on MONITOR_PORT and the servers connect
  * to it on startup. each server connection (sfd) gets a manager thread that
- * enrolls the server on tblsrv and checks that the server is alive by setting
+ * enrolls the server on table and checks that the server is alive by setting
  * SO_KEEPALIVE on sfd. if a server dies, the keepalive will fail and the
- * manager thread wakes up and uses its connection to tblsrv (tfd) to set that
+ * manager thread wakes up and uses its connection to table (tfd) to set that
  * server's state as down.
  *
- * server --- ip:port ---> monitor --- enroll ip:port, up/down key --> tblsrv
+ * server --- ip:port ---> monitor --- enroll ip:port, up/down key --> table
  *
  */
 
@@ -47,10 +47,10 @@
  * momentarily, we'd have two threads that are managing the same server, and
  * that could lead to problems: the old thread may set its state to down after
  * the new thread has set the state to up, and that server would be wrongfully
- * marked as down on tblsrv.
+ * marked as down on table.
  *
  * because of that, we need to ensure that only the new thread sets the state
- * for that server in tblsrv and sets slot[key].sfd with the current
+ * for that server in table and sets slot[key].sfd with the current
  * connection's socket file descriptor.
  *
  * to guarantee that, we make the manager threads grab slot[key].slock before
@@ -76,7 +76,7 @@ static const char *tblhost;
 static void
 usage (void)
 {
-  fprintf (stderr, "usage: monitor <ip> <tblsrv>\n");
+  fprintf (stderr, "usage: monitor <ip> <table>\n");
   exit (2);
 }
 
@@ -120,7 +120,7 @@ manage (void *arg)
     pr_err (1, "setsockopt");
 
   if ((tfd = net_tcp_connect (tblhost, TABLE_PORT)) < 0)
-    pr_err (1, "net_tcp_connect: can't reach tblsrv (%s)", tblhost);
+    pr_err (1, "net_tcp_connect: can't reach table (%s)", tblhost);
 
   if (table_protocol_enroll (tfd, ip, port, &key) < 0)
     pr_err (1, "table_protocol_enroll: enroll failed (%s:%s)", ip, port);
