@@ -14,7 +14,10 @@ parse_server (const char *s, struct server *srv)
   unsigned long conns;
 
   if (sscanf (s, "%15s %5s %4s %lu", srv->ip, srv->port, state, &conns) != 4)
-    return -1;
+    {
+      errno = EBADMSG;
+      return -1;
+    }
 
   if (!strcmp (state, "up"))
     srv->state = 1;
@@ -23,7 +26,10 @@ parse_server (const char *s, struct server *srv)
     srv->state = 0;
 
   else
-    return -1;
+    {
+      errno = EBADMSG;
+      return -1;
+    }
 
   srv->conns = conns;
 
@@ -48,8 +54,14 @@ table_protocol_enroll (int sock, const char *ip, const char *port,
   errno = 0;
   n = strtoul (msg, &end, 10);
 
-  if (end == msg || *end != '\0' || errno == ERANGE)
+  if (errno == ERANGE)
     return -1;
+
+  if (end == msg || *end != '\0')
+    {
+      errno = EBADMSG;
+      return -1;
+    }
 
   *key = n;
 
@@ -66,6 +78,15 @@ table_protocol_up (int sock, unsigned long key)
   if (net_io_sendln (sock, msg, sizeof msg) < 0)
     return -1;
 
+  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+    return -1;
+
+  if (strcmp (msg, "ok"))
+    {
+      errno = EBADMSG;
+      return -1;
+    }
+
   return 0;
 }
 
@@ -78,6 +99,15 @@ table_protocol_down (int sock, unsigned long key)
 
   if (net_io_sendln (sock, msg, sizeof msg) < 0)
     return -1;
+
+  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+    return -1;
+
+  if (strcmp (msg, "ok"))
+    {
+      errno = EBADMSG;
+      return -1;
+    }
 
   return 0;
 }
@@ -103,8 +133,14 @@ table_protocol_grab (int sock, const char *policy, unsigned long *key,
   errno = 0;
   n = strtoul (msg, &end, 10);
 
-  if (end == msg || *end != ' ' || errno == ERANGE)
+  if (errno == ERANGE)
     return -1;
+
+  if (end == msg || *end != ' ')
+    {
+      errno = EBADMSG;
+      return -1;
+    }
 
   if (parse_server (end + 1, srv) < 0)
     return -1;
@@ -123,6 +159,15 @@ table_protocol_release (int sock, unsigned long key)
 
   if (net_io_sendln (sock, msg, sizeof msg) < 0)
     return -1;
+
+  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+    return -1;
+
+  if (strcmp (msg, "ok"))
+    {
+      errno = EBADMSG;
+      return -1;
+    }
 
   return 0;
 }
@@ -158,8 +203,14 @@ table_protocol_total (int sock, unsigned long *total)
   errno = 0;
   n = strtoul (msg, &end, 10);
 
-  if (end == msg || *end != '\0' || errno == ERANGE)
+  if (errno == ERANGE)
     return -1;
+
+  if (end == msg || *end != '\0')
+    {
+      errno = EBADMSG;
+      return -1;
+    }
 
   *total = n;
 

@@ -22,9 +22,6 @@ net_io_send (int sock, const void *buf, size_t len)
           if (errno == EINTR)
             continue;
 
-          if (errno == EPIPE)
-            errno = ENOTCONN;
-
           return -1;
         }
 
@@ -62,9 +59,6 @@ net_io_sendln (int sock, const char *str, size_t len)
         {
           if (errno == EINTR)
             continue;
-
-          if (errno == EPIPE)
-            errno = ENOTCONN;
 
           return -1;
         }

@@ -1,3 +1,21 @@
+/**
+ * src/monitor/monitor.c
+ *
+ * the monitor is responsible for enrolling and managing the state of the
+ * servers in tblsrv, so whenever a server starts it has to set its state to
+ * up, and whenever a server stops/crashes it has to set its state to down.
+ *
+ * to achieve this, the monitor listens on MONITOR_PORT and the servers connect
+ * to it on startup. each server connection (sfd) gets a manager thread that
+ * enrolls the server on tblsrv and checks that the server is alive by setting
+ * SO_KEEPALIVE on sfd. if a server dies, the keepalive will fail and the
+ * manager thread wakes up and uses its connection to tblsrv (tfd) to set that
+ * server's state as down.
+ *
+ * server --- ip:port ---> monitor --- enroll ip:port, up/down key --> tblsrv
+ *
+ */
+
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
@@ -8,30 +26,51 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/tcp.h>
-#include <err.h>
 
+#include <log/pr.h>
 #include <net/io.h>
 #include <net/tcp.h>
 #include <monitor/protocol.h>
 #include <table/protocol.h>
 
-#ifndef TCP_KEEPIDLE
-#define TCP_KEEPIDLE TCP_KEEPALIVE
-#endif
+#define MSGBUFSZ 64 /* rw buf for sfd  */
 
-struct slot
+/**
+ * struct slot
+ *
+ * control structure to manage the servers
+ *
+ * suppose a server quickly restarts, and before the old manager thread notices
+ * that the server died, that server reconnects to monitor and gets a new
+ * manager thread.
+ *
+ * momentarily, we'd have two threads that are managing the same server, and
+ * that could lead to problems: the old thread may set its state to down after
+ * the new thread has set the state to up, and that server would be wrongfully
+ * marked as down on tblsrv.
+ *
+ * because of that, we need to ensure that only the new thread sets the state
+ * for that server in tblsrv and sets slot[key].sfd with the current
+ * connection's socket file descriptor.
+ *
+ * to guarantee that, we make the manager threads grab slot[key].slock before
+ * setting the server's state, and only do that when slot[key].sfd is the same
+ * as its local sfd variable. that way, the new thread always sets the state
+ * last and slot[key].sfd isn't clobbered.
+ *
+ * and having slot[key].sfd store the current manager thread's server
+ * connection file descriptor allows the new thread to close the old thread's
+ * connection, so it wakes up and dies.
+ *
+ */
+
+static struct slot
 {
-  pthread_mutex_t mutex;
-  int fd;
-};
+  pthread_mutex_t slock; /* guards sfd and the key's up/down  */
+  int sfd;               /* connection watching the key, or -1  */
+} slots[TABLE_LENGTH];   /* one slot for each key  */
 
 static const char *tblhost;
-
-/* held by a thread for as long as it watches that key  */
-static struct slot slots[TABLE_LENGTH];
-
-/* guards slots[].fd  */
-static pthread_mutex_t slots_lock = PTHREAD_MUTEX_INITIALIZER;
 
 [[noreturn]]
 static void
@@ -42,71 +81,93 @@ usage (void)
 }
 
 static void *
-serve (void *arg)
+manage (void *arg)
 {
   int sfd = (int)(intptr_t)arg, tfd, one = 1, idle = 2, intvl = 1, cnt = 2;
-  char msg[64], *ip, *port, c;
+  char msg[MSGBUFSZ], *ip, *port, c;
   unsigned long key;
   ssize_t n;
 
+  /* server sends "<ip> <port>"  */
   if (net_io_recvln (sfd, msg, sizeof msg) < 0)
-    goto err_net_io_recvln;
+    {
+      pr_warn ("net_io_recvln");
+      goto err_net_io_recvln;
+    }
 
   ip = msg;
 
   if ((port = strchr (msg, ' ')) == NULL)
-    goto err_strchr;
+    {
+      pr_warnx ("ip:port pair is missing ' ' separator (%s)", msg);
+      goto err_strchr;
+    }
 
+  /* split msg into "<ip>" "<port>"  */
   *port++ = '\0';
 
-  /* tblsrv would close on these, which would kill us  */
   if (strlen (ip) >= TABLE_ADDRSTRLEN || strlen (port) >= TABLE_PORTSTRLEN)
-    goto err_strlen;
+    {
+      pr_warnx ("ip:port pair is too long (%s:%s)", ip, port);
+      goto err_strlen;
+    }
 
+  /* 2s idle + 2 probes 1s apart  */
   if (setsockopt (sfd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof one)
       || setsockopt (sfd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof idle)
       || setsockopt (sfd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof intvl)
       || setsockopt (sfd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof cnt))
-    err (1, "setsockopt");
+    pr_err (1, "setsockopt");
 
   if ((tfd = net_tcp_connect (tblhost, TABLE_PORT)) < 0)
-    exit (1);
+    pr_err (1, "net_tcp_connect: can't reach tblsrv (%s)", tblhost);
 
   if (table_protocol_enroll (tfd, ip, port, &key) < 0)
-    errx (1, "enroll failed");
+    pr_err (1, "table_protocol_enroll: enroll failed (%s:%s)", ip, port);
 
-  /* take over the slot, waking up whoever was watching it  */
-  pthread_mutex_lock (&slots_lock);
+  pthread_mutex_lock (&slots[key].slock);
 
-  if (slots[key].fd >= 0)
-    shutdown (slots[key].fd, SHUT_RDWR);
+  /* take over the slot  */
+  if (slots[key].sfd >= 0)
+    {
+      shutdown (slots[key].sfd, SHUT_RDWR); /* wake up old manager thread  */
+      pr_debugx ("%s:%s (key %lu) takeover", ip, port, key);
+    }
 
-  slots[key].fd = sfd;
-  pthread_mutex_unlock (&slots_lock);
-
-  /* wait for it to mark the key down  */
-  pthread_mutex_lock (&slots[key].mutex);
+  slots[key].sfd = sfd;
 
   if (table_protocol_up (tfd, key) < 0)
-    errx (1, "up failed");
+    pr_err (1, "table_protocol_up: up failed (key %lu)", key);
 
-  /* pong never sends, so this only returns when the connection dies  */
+  pthread_mutex_unlock (&slots[key].slock);
+
+  pr_debugx ("%s:%s (key %lu) state up", ip, port, key);
+
+  /* this only returns when the connection dies  */
   while ((n = recv (sfd, &c, 1, 0)) > 0 || (n < 0 && errno == EINTR))
     ;
 
-  if (table_protocol_down (tfd, key) < 0)
-    errx (1, "down failed");
+  if (n == 0)
+    pr_debugx ("%s:%s (key %lu) connection closed", ip, port, key);
 
-  /* clear before close, so shutdown never hits a reused fd  */
-  pthread_mutex_lock (&slots_lock);
+  else
+    pr_debug ("%s:%s (key %lu) connection lost", ip, port, key);
 
-  if (slots[key].fd == sfd)
-    slots[key].fd = -1;
+  pthread_mutex_lock (&slots[key].slock);
 
-  pthread_mutex_unlock (&slots_lock);
+  /* check if another thread took over  */
+  if (slots[key].sfd == sfd)
+    {
+      if (table_protocol_down (tfd, key) < 0)
+        pr_err (1, "table_protocol_down: down failed (key %lu)", key);
+
+      slots[key].sfd = -1;
+      pr_debugx ("%s:%s (key %lu) state down", ip, port, key);
+    }
+
+  pthread_mutex_unlock (&slots[key].slock);
 
   close (sfd);
-  pthread_mutex_unlock (&slots[key].mutex);
   close (tfd);
 
   return NULL;
@@ -132,25 +193,27 @@ main (int argc, char *argv[])
 
   for (i = 0; i < TABLE_LENGTH; ++i)
     {
-      pthread_mutex_init (&slots[i].mutex, NULL);
-      slots[i].fd = -1;
+      pthread_mutex_init (&slots[i].slock, NULL);
+      slots[i].sfd = -1;
     }
 
   if ((lfd = net_tcp_listen (argv[1], MONITOR_PORT, INT_MAX)) < 0)
-    return 1;
+    pr_err (1, "net_tcp_listen: can't listen on %s:%s", argv[1], MONITOR_PORT);
+
+  pr_debugx ("listening on %s:%s", argv[1], MONITOR_PORT);
 
   for (;;)
     {
       if ((cfd = accept (lfd, NULL, NULL)) < 0)
         {
-          warn ("accept");
+          pr_warn ("accept");
           continue;
         }
 
-      if ((rc = pthread_create (&t, NULL, serve, (void *)(intptr_t)cfd)))
+      if ((rc = pthread_create (&t, NULL, manage, (void *)(intptr_t)cfd)))
         {
           errno = rc;
-          warn ("pthread_create");
+          pr_warn ("pthread_create");
           close (cfd);
           continue;
         }

@@ -95,7 +95,7 @@ enroll_handler (int sock, char msg[MSGBUFSZ])
 }
 
 static int
-up_handler (char msg[MSGBUFSZ])
+up_handler (int sock, char msg[MSGBUFSZ])
 {
   unsigned long key;
 
@@ -104,11 +104,14 @@ up_handler (char msg[MSGBUFSZ])
 
   table[key].state = 1;
 
+  if (net_io_sendln (sock, "ok", sizeof "ok") < 0)
+    return -1;
+
   return 0;
 }
 
 static int
-down_handler (char msg[MSGBUFSZ])
+down_handler (int sock, char msg[MSGBUFSZ])
 {
   unsigned long key;
 
@@ -116,6 +119,9 @@ down_handler (char msg[MSGBUFSZ])
     return -1;
 
   table[key].state = 0;
+
+  if (net_io_sendln (sock, "ok", sizeof "ok") < 0)
+    return -1;
 
   return 0;
 }
@@ -182,7 +188,7 @@ grab_handler (int sock, char msg[MSGBUFSZ])
 }
 
 static int
-release_handler (char msg[MSGBUFSZ])
+release_handler (int sock, char msg[MSGBUFSZ])
 {
   unsigned long key;
 
@@ -201,6 +207,9 @@ release_handler (char msg[MSGBUFSZ])
   --total;
 
   pthread_mutex_unlock (&lock);
+
+  if (net_io_sendln (sock, "ok", sizeof "ok") < 0)
+    return -1;
 
   return 0;
 }
@@ -263,16 +272,16 @@ serve (void *arg)
         ret = enroll_handler (cfd, msg);
 
       else if (!strncmp (msg, "up ", sizeof "up"))
-        ret = up_handler (msg);
+        ret = up_handler (cfd, msg);
 
       else if (!strncmp (msg, "down ", sizeof "down"))
-        ret = down_handler (msg);
+        ret = down_handler (cfd, msg);
 
       else if (!strncmp (msg, "grab ", sizeof "grab"))
         ret = grab_handler (cfd, msg);
 
       else if (!strncmp (msg, "release ", sizeof "release"))
-        ret = release_handler (msg);
+        ret = release_handler (cfd, msg);
 
       else if (!strncmp (msg, "status ", sizeof "status"))
         ret = status_handler (cfd, msg);
