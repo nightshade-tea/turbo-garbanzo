@@ -1,5 +1,5 @@
 /**
- * src/monitor/monitor.c
+ * src/monitor.c
  *
  * the monitor is responsible for enrolling and managing the state of the
  * servers in table, so whenever a server starts it has to set its state to
