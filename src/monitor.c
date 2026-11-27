@@ -16,7 +16,6 @@
  *
  */
 
-#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +23,6 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/socket.h>
-#include <netinet/tcp.h>
 
 #include <log/pr.h>
 #include <net/io.h>
@@ -82,10 +80,9 @@ usage (void)
 static void
 manage (int sfd)
 {
-  int tfd, one = 1, idle = 2, intvl = 1, cnt = 2;
-  char msg[MSGBUFSZ], *ip, *port, c;
+  char msg[MSGBUFSZ], *ip, *port;
   unsigned long key;
-  ssize_t n;
+  int tfd;
 
   /* server sends "<ip> <port>"  */
   if (net_io_recvln (sfd, msg, sizeof msg) < 0)
@@ -111,12 +108,9 @@ manage (int sfd)
       goto err_strlen;
     }
 
-  /* 2s idle + 2 probes 1s apart  */
-  if (setsockopt (sfd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof one)
-      || setsockopt (sfd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof idle)
-      || setsockopt (sfd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof intvl)
-      || setsockopt (sfd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof cnt))
-    pr_err (1, "setsockopt");
+  /* 3s idle + 2 probes 1s apart  */
+  if (net_tcp_keepalive (sfd, 3, 1, 2) < 0)
+    pr_err (1, "net_tcp_keepalive");
 
   if ((tfd = net_tcp_connect (tblhost, TBL_PORT)) < 0)
     pr_err (1, "net_tcp_connect: can't reach table (%s)", tblhost);
@@ -143,14 +137,11 @@ manage (int sfd)
   pr_debugx ("%s:%s (key %lu) state up", ip, port, key);
 
   /* this only returns when the connection dies  */
-  while ((n = recv (sfd, &c, 1, 0)) > 0 || (n < 0 && errno == EINTR))
-    ;
-
-  if (n == 0)
-    pr_debugx ("%s:%s (key %lu) connection closed", ip, port, key);
+  if (net_io_hold (sfd) < 0)
+    pr_debug ("%s:%s (key %lu) connection lost", ip, port, key);
 
   else
-    pr_debug ("%s:%s (key %lu) connection lost", ip, port, key);
+    pr_debugx ("%s:%s (key %lu) connection closed", ip, port, key);
 
   pthread_mutex_lock (&slots[key].slock);
 

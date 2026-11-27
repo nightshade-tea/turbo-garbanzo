@@ -1,11 +1,8 @@
-#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <pthread.h>
-#include <sys/socket.h>
 #include <err.h>
 
 #include <net/io.h>
@@ -14,11 +11,6 @@
 #include <tbl/protocol.h>
 
 #define CONNECT_TRIES 3
-
-struct relay
-{
-  int from, to;
-};
 
 static const char *policy, *tblhost;
 
@@ -30,41 +22,12 @@ usage (void)
   exit (2);
 }
 
-static void *
-relay (void *arg)
-{
-  struct relay *r = arg;
-  char buf[4096];
-  ssize_t n;
-
-  for (;;)
-    {
-      if ((n = recv (r->from, buf, sizeof buf, 0)) < 0)
-        {
-          if (errno == EINTR)
-            continue;
-
-          break;
-        }
-
-      if (n == 0 || net_io_send (r->to, buf, (size_t)n) < 0)
-        break;
-    }
-
-  /* pass the eof on, so the other direction ends too  */
-  shutdown (r->to, SHUT_WR);
-
-  return NULL;
-}
-
 static void
 serve (int cfd)
 {
   int tfd, sfd = -1, i, rc;
-  struct relay fwd, back;
   struct server srv;
   unsigned long key;
-  pthread_t t;
 
   if ((tfd = net_tcp_connect (tblhost, TBL_PORT)) < 0)
     exit (1);
@@ -88,20 +51,9 @@ serve (int cfd)
   if (sfd < 0)
     goto err_net_tcp_connect;
 
-  fwd = (struct relay){ .from = cfd, .to = sfd };
-  back = (struct relay){ .from = sfd, .to = cfd };
+  if (net_io_relay (cfd, sfd) < 0)
+    warn ("net_io_relay");
 
-  if ((rc = pthread_create (&t, NULL, relay, &back)))
-    {
-      errno = rc;
-      warn ("pthread_create");
-      goto err_pthread_create;
-    }
-
-  relay (&fwd);
-  pthread_join (t, NULL);
-
-err_pthread_create:
   close (sfd);
 
   if (tbl_release (tfd, key) < 0)

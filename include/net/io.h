@@ -18,4 +18,10 @@ ssize_t net_io_sendln (int sock, const char *str, size_t len);
    returns # of bytes received or -1 on error.  */
 ssize_t net_io_recvln (int sock, char *str, size_t len);
 
+/* block until sock's connection drops  */
+int net_io_hold (int sock);
+
+/* relay data between afd and bfd  */
+int net_io_relay (int afd, int bfd);
+
 #endif /* NET_IO_H  */

@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <sys/socket.h>
 
 #include <net/io.h>
 #include <net/tcp.h>
@@ -21,16 +20,11 @@ static void *
 watch (void *arg)
 {
   struct watch_ctx w = *(struct watch_ctx *)arg;
-  ssize_t n;
-  char c;
 
   free (arg);
 
   /* mon never sends, so this only returns when the connection drops  */
-  while ((n = recv (w.monfd, &c, 1, 0)) > 0 || (n < 0 && errno == EINTR))
-    ;
-
-  if (n == 0)
+  if (net_io_hold (w.monfd) == 0)
     errno = ENOTCONN;
 
   close (w.monfd);

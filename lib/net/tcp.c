@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <netdb.h>
 #include <errno.h>
 
@@ -148,4 +149,19 @@ err_pthread_create:
 err_malloc:
   close (connfd);
   return -1;
+}
+
+int
+net_tcp_keepalive (int sock, int idle, int intvl, int cnt)
+{
+  int one = 1;
+
+  if (setsockopt (sock, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof one) < 0
+      || setsockopt (sock, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof idle) < 0
+      || setsockopt (sock, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof intvl)
+             < 0
+      || setsockopt (sock, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof cnt) < 0)
+    return -1;
+
+  return 0;
 }
