@@ -2,7 +2,8 @@
  * src/pong.c
  *
  * pong is the server behind the load balancer. it listens on ip:port,
- * enrolls itself on monitor, and replies pong to every ping it receives.
+ * enrolls itself on monitor, and replies pong with its ip:port to every ping
+ * it receives, so clients can see which server answered.
  *
  * it stays enrolled for as long as the connection to monitor lives. if that
  * connection drops, pong exits, since monitor can no longer watch it and
@@ -10,7 +11,7 @@
  *
  * pong --- ip:port ---> monitor
  * ping --- ping ---> pong
- *      <-- pong ---
+ *      <-- pong ip:port ---
  */
 
 #include <limits.h>
@@ -24,6 +25,9 @@
 #include <net/tcp.h>
 #include <mon/protocol.h>
 #include <ping/protocol.h>
+
+/* "pong <ip>:<port>", built once in main  */
+static char pongmsg[PING_MSGBUFSZ];
 
 [[noreturn]]
 static void
@@ -51,7 +55,7 @@ reply (int connfd)
         break;
 
       if (strcmp (msg, PING) != 0
-          || net_io_sendln (connfd, PONG, sizeof PONG) < 0)
+          || net_io_sendln (connfd, pongmsg, sizeof pongmsg) < 0)
         break;
     }
 
@@ -70,6 +74,8 @@ main (int argc, char *argv[])
   ip = argv[1];
   port = argv[2];
   monhost = argv[3];
+
+  snprintf (pongmsg, sizeof pongmsg, PONG " %s:%s", ip, port);
 
   if ((listenfd = net_tcp_listen (ip, port, INT_MAX)) < 0)
     pr_err (1, "net_tcp_listen: can't listen on %s:%s", ip, port);
