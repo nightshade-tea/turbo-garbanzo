@@ -1,4 +1,18 @@
-#include <errno.h>
+/**
+ * src/pong.c
+ *
+ * pong is the server behind the load balancer. it listens on ip:port,
+ * enrolls itself on monitor, and replies pong to every ping it receives.
+ *
+ * it stays enrolled for as long as the connection to monitor lives. if that
+ * connection drops, pong exits, since monitor can no longer watch it and
+ * table would have stale state.
+ *
+ * pong --- ip:port ---> monitor
+ * ping --- ping ---> pong
+ *      <-- pong ---
+ */
+
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,16 +48,10 @@ reply (int connfd)
   for (;;)
     {
       if (net_io_recvln (connfd, msg, sizeof msg) < 0)
-        {
-          /* too long  */
-          if (errno == EMSGSIZE)
-            continue;
+        break;
 
-          break;
-        }
-
-      if (strcmp (msg, PING) == 0
-          && net_io_sendln (connfd, PONG, sizeof PONG) < 0)
+      if (strcmp (msg, PING) != 0
+          || net_io_sendln (connfd, PONG, sizeof PONG) < 0)
         break;
     }
 
@@ -65,6 +73,8 @@ main (int argc, char *argv[])
 
   if ((listenfd = net_tcp_listen (ip, port, INT_MAX)) < 0)
     pr_err (1, "net_tcp_listen: can't listen on %s:%s", ip, port);
+
+  pr_debugx ("listening on %s:%s", ip, port);
 
   if (mon_enroll (monhost, ip, port, lost) < 0)
     pr_err (1, "mon_enroll: can't reach monitor (%s)", monhost);

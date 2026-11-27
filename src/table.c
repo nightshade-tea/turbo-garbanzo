@@ -309,6 +309,8 @@ main (int argc, char *argv[])
   if ((listenfd = net_tcp_listen (ip, TBL_PORT, INT_MAX)) < 0)
     pr_err (1, "net_tcp_listen: can't listen on %s:%s", ip, TBL_PORT);
 
+  pr_debugx ("listening on %s:%s", ip, TBL_PORT);
+
   for (;;)
     if (net_tcp_serve (listenfd, handle) < 0)
       pr_warn ("net_tcp_serve");
