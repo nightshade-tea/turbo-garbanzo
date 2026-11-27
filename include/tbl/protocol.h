@@ -5,7 +5,6 @@
 
 #define TBL_LENGTH 4096
 #define TBL_PORT "3030"
-#define TBL_MSGBUFSZ 128
 
 #define TBL_POLICY_LC "lc"
 #define TBL_POLICY_RR "rr"
@@ -17,8 +16,8 @@ struct server
 {
   char ip[TBL_ADDRSTRLEN];
   char port[TBL_PORTSTRLEN];
-  _Atomic unsigned char state; /* 0 down, 1 up  */
-  _Atomic unsigned long conns;
+  unsigned char state; /* 0 down, 1 up  */
+  unsigned long conns;
 };
 
 /* get the key for ip:port, creating the entry if needed  */
@@ -30,10 +29,10 @@ int tbl_up (int fd, unsigned long key);
 /* mark key as down  */
 int tbl_down (int fd, unsigned long key);
 
-/* pick an up server by policy ("lc" or "rr") and add a conn to it.
+/* pick an up server by policy and add a conn to it.
    returns 1 if no server is up.  */
 int tbl_grab (int fd, const char *policy, unsigned long *key,
-              struct server *srv);
+              char ip[TBL_ADDRSTRLEN], char port[TBL_PORTSTRLEN]);
 
 /* remove a conn from key  */
 int tbl_release (int fd, unsigned long key);

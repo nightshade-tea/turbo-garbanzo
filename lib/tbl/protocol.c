@@ -5,6 +5,7 @@
 
 #include <net/io.h>
 #include <tbl/protocol.h>
+#include <tbl/wire.h>
 
 static int
 parse_ulong (const char *s, char term, unsigned long *n, char **end)
@@ -35,7 +36,7 @@ parse_ulong (const char *s, char term, unsigned long *n, char **end)
 static int
 parse_server (const char *s, struct server *srv)
 {
-  char state[sizeof "down"];
+  char state[sizeof TBL_DOWN];
   unsigned long conns;
 
   if (sscanf (s, "%15s %5s %4s %lu", srv->ip, srv->port, state, &conns) != 4)
@@ -44,10 +45,10 @@ parse_server (const char *s, struct server *srv)
       return -1;
     }
 
-  if (strcmp (state, "up") == 0)
+  if (strcmp (state, TBL_UP) == 0)
     srv->state = 1;
 
-  else if (strcmp (state, "down") == 0)
+  else if (strcmp (state, TBL_DOWN) == 0)
     srv->state = 0;
 
   else
@@ -74,7 +75,7 @@ ok_cmd (int fd, const char *cmd, unsigned long key)
   if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  if (strcmp (msg, "ok") != 0)
+  if (strcmp (msg, TBL_OK) != 0)
     {
       errno = EBADMSG;
       return -1;
@@ -88,7 +89,7 @@ tbl_enroll (int fd, const char *ip, const char *port, unsigned long *key)
 {
   char msg[TBL_MSGBUFSZ];
 
-  snprintf (msg, sizeof msg, "enroll %s %s", ip, port);
+  snprintf (msg, sizeof msg, TBL_CMD_ENROLL " %s %s", ip, port);
 
   if (net_io_sendln (fd, msg, sizeof msg) < 0)
     return -1;
@@ -96,28 +97,38 @@ tbl_enroll (int fd, const char *ip, const char *port, unsigned long *key)
   if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  return parse_ulong (msg, '\0', key, NULL);
+  if (parse_ulong (msg, '\0', key, NULL) < 0)
+    return -1;
+
+  if (*key >= TBL_LENGTH)
+    {
+      errno = EBADMSG;
+      return -1;
+    }
+
+  return 0;
 }
 
 int
 tbl_up (int fd, unsigned long key)
 {
-  return ok_cmd (fd, "up", key);
+  return ok_cmd (fd, TBL_CMD_UP, key);
 }
 
 int
 tbl_down (int fd, unsigned long key)
 {
-  return ok_cmd (fd, "down", key);
+  return ok_cmd (fd, TBL_CMD_DOWN, key);
 }
 
 int
-tbl_grab (int fd, const char *policy, unsigned long *key, struct server *srv)
+tbl_grab (int fd, const char *policy, unsigned long *key,
+          char ip[TBL_ADDRSTRLEN], char port[TBL_PORTSTRLEN])
 {
   char msg[TBL_MSGBUFSZ], *end;
   unsigned long n;
 
-  snprintf (msg, sizeof msg, "grab %s", policy);
+  snprintf (msg, sizeof msg, TBL_CMD_GRAB " %s", policy);
 
   if (net_io_sendln (fd, msg, sizeof msg) < 0)
     return -1;
@@ -125,14 +136,23 @@ tbl_grab (int fd, const char *policy, unsigned long *key, struct server *srv)
   if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  if (strcmp (msg, "none") == 0)
+  if (strcmp (msg, TBL_NONE) == 0)
     return 1;
 
   if (parse_ulong (msg, ' ', &n, &end) < 0)
     return -1;
 
-  if (parse_server (end + 1, srv) < 0)
-    return -1;
+  if (n >= TBL_LENGTH)
+    {
+      errno = EBADMSG;
+      return -1;
+    }
+
+  if (sscanf (end + 1, "%15s %5s", ip, port) != 2)
+    {
+      errno = EBADMSG;
+      return -1;
+    }
 
   *key = n;
 
@@ -142,7 +162,7 @@ tbl_grab (int fd, const char *policy, unsigned long *key, struct server *srv)
 int
 tbl_release (int fd, unsigned long key)
 {
-  return ok_cmd (fd, "release", key);
+  return ok_cmd (fd, TBL_CMD_RELEASE, key);
 }
 
 int
@@ -150,7 +170,7 @@ tbl_status (int fd, unsigned long key, struct server *srv)
 {
   char msg[TBL_MSGBUFSZ];
 
-  snprintf (msg, sizeof msg, "status %lu", key);
+  snprintf (msg, sizeof msg, TBL_CMD_STATUS " %lu", key);
 
   if (net_io_sendln (fd, msg, sizeof msg) < 0)
     return -1;
@@ -166,7 +186,7 @@ tbl_total (int fd, unsigned long *total)
 {
   char msg[TBL_MSGBUFSZ];
 
-  if (net_io_sendln (fd, "total", sizeof "total") < 0)
+  if (net_io_sendln (fd, TBL_CMD_TOTAL, sizeof TBL_CMD_TOTAL) < 0)
     return -1;
 
   if (net_io_recvln (fd, msg, sizeof msg) < 0)

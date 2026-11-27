@@ -43,7 +43,7 @@ static void
 relay (int connfd)
 {
   int tblfd, servfd, rc;
-  struct server srv;
+  char ip[TBL_ADDRSTRLEN], port[TBL_PORTSTRLEN];
   unsigned long key;
 
   if ((tblfd = net_tcp_connect (tblhost, TBL_PORT)) < 0)
@@ -51,7 +51,7 @@ relay (int connfd)
 
   for (;;)
     {
-      if ((rc = tbl_grab (tblfd, policy, &key, &srv)) < 0)
+      if ((rc = tbl_grab (tblfd, policy, &key, ip, port)) < 0)
         pr_err (1, "tbl_grab: grab failed");
 
       if (rc == 1)
@@ -60,7 +60,7 @@ relay (int connfd)
           goto err_tbl_grab;
         }
 
-      if ((servfd = net_tcp_connect (srv.ip, srv.port)) >= 0)
+      if ((servfd = net_tcp_connect (ip, port)) >= 0)
         break;
 
       if (tbl_release (tblfd, key) < 0)
