@@ -1,3 +1,22 @@
+/**
+ * src/loadb.c
+ *
+ * the load balancer listens on LOADB_PORT and relays each client connection
+ * to a server picked by table, using the policy given on the command line:
+ * lc (least connections) or rr (round robin).
+ *
+ * for each client, loadb grabs a server from table, connects to it and relays
+ * data both ways until both sides close, then releases it. if the connect
+ * fails, the server is released and another one is grabbed, until table has
+ * no server up.
+ *
+ * client <--> loadb <--> server
+ *               |
+ *     grab/release key
+ *               |
+ *             table
+ */
+
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,8 +28,6 @@
 #include <net/tcp.h>
 #include <loadb/protocol.h>
 #include <tbl/protocol.h>
-
-#define CONNECT_TRIES 3
 
 static const char *policy, *tblhost;
 
@@ -25,21 +42,23 @@ usage (void)
 static void
 relay (int connfd)
 {
-  int tblfd, servfd = -1, i, rc;
+  int tblfd, servfd, rc;
   struct server srv;
   unsigned long key;
 
   if ((tblfd = net_tcp_connect (tblhost, TBL_PORT)) < 0)
     pr_err (1, "net_tcp_connect: can't reach table (%s)", tblhost);
 
-  for (i = 0; i < CONNECT_TRIES; ++i)
+  for (;;)
     {
       if ((rc = tbl_grab (tblfd, policy, &key, &srv)) < 0)
         pr_err (1, "tbl_grab: grab failed");
 
-      /* no server up  */
       if (rc == 1)
-        break;
+        {
+          pr_warnx ("no server up");
+          goto err_tbl_grab;
+        }
 
       if ((servfd = net_tcp_connect (srv.ip, srv.port)) >= 0)
         break;
@@ -47,9 +66,6 @@ relay (int connfd)
       if (tbl_release (tblfd, key) < 0)
         pr_err (1, "tbl_release: release failed (key %lu)", key);
     }
-
-  if (servfd < 0)
-    goto err_net_tcp_connect;
 
   if (net_io_relay (connfd, servfd) < 0)
     pr_warn ("net_io_relay");
@@ -59,7 +75,7 @@ relay (int connfd)
   if (tbl_release (tblfd, key) < 0)
     pr_err (1, "tbl_release: release failed (key %lu)", key);
 
-err_net_tcp_connect:
+err_tbl_grab:
   close (tblfd);
   close (connfd);
 }
@@ -77,7 +93,8 @@ main (int argc, char *argv[])
   policy = argv[2];
   tblhost = argv[3];
 
-  if (strcmp (policy, "lc") && strcmp (policy, "rr"))
+  if (strcmp (policy, TBL_POLICY_LC) != 0
+      && strcmp (policy, TBL_POLICY_RR) != 0)
     usage ();
 
   if ((listenfd = net_tcp_listen (ip, LOADB_PORT, INT_MAX)) < 0)

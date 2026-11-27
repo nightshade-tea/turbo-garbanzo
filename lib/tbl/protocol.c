@@ -44,10 +44,10 @@ parse_server (const char *s, struct server *srv)
       return -1;
     }
 
-  if (!strcmp (state, "up"))
+  if (strcmp (state, "up") == 0)
     srv->state = 1;
 
-  else if (!strcmp (state, "down"))
+  else if (strcmp (state, "down") == 0)
     srv->state = 0;
 
   else
@@ -74,7 +74,7 @@ ok_cmd (int fd, const char *cmd, unsigned long key)
   if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  if (strcmp (msg, "ok"))
+  if (strcmp (msg, "ok") != 0)
     {
       errno = EBADMSG;
       return -1;
@@ -125,7 +125,7 @@ tbl_grab (int fd, const char *policy, unsigned long *key, struct server *srv)
   if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  if (!strcmp (msg, "none"))
+  if (strcmp (msg, "none") == 0)
     return 1;
 
   if (parse_ulong (msg, ' ', &n, &end) < 0)

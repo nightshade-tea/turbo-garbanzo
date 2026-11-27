@@ -7,6 +7,9 @@
 #define TBL_PORT "3030"
 #define TBL_MSGBUFSZ 128
 
+#define TBL_POLICY_LC "lc"
+#define TBL_POLICY_RR "rr"
+
 #define TBL_ADDRSTRLEN INET_ADDRSTRLEN
 #define TBL_PORTSTRLEN 6
 

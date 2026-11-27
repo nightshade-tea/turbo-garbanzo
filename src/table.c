@@ -62,7 +62,7 @@ enroll_handler (int connfd, char msg[TBL_MSGBUFSZ])
   n = count;
 
   for (key = 0; key < n; ++key)
-    if (!strcmp (table[key].ip, ip) && !strcmp (table[key].port, port))
+    if (strcmp (table[key].ip, ip) == 0 && strcmp (table[key].port, port) == 0)
       break;
 
   if (key == n)
@@ -134,14 +134,14 @@ grab_handler (int connfd, char msg[TBL_MSGBUFSZ])
   n = count;
   key = n;
 
-  if (!strcmp (p, "lc"))
+  if (strcmp (p, TBL_POLICY_LC) == 0)
     {
       for (i = 0; i < n; ++i)
         if (table[i].state && (key == n || table[i].conns < table[key].conns))
           key = i;
     }
 
-  else if (!strcmp (p, "rr"))
+  else if (strcmp (p, TBL_POLICY_RR) == 0)
     {
       for (j = 0; j < n; ++j)
         {
@@ -264,25 +264,25 @@ handle (int connfd)
         }
 
       /* handle command  */
-      if (!strncmp (msg, "enroll ", sizeof "enroll"))
+      if (strncmp (msg, "enroll ", sizeof "enroll") == 0)
         ret = enroll_handler (connfd, msg);
 
-      else if (!strncmp (msg, "up ", sizeof "up"))
+      else if (strncmp (msg, "up ", sizeof "up") == 0)
         ret = up_handler (connfd, msg);
 
-      else if (!strncmp (msg, "down ", sizeof "down"))
+      else if (strncmp (msg, "down ", sizeof "down") == 0)
         ret = down_handler (connfd, msg);
 
-      else if (!strncmp (msg, "grab ", sizeof "grab"))
+      else if (strncmp (msg, "grab ", sizeof "grab") == 0)
         ret = grab_handler (connfd, msg);
 
-      else if (!strncmp (msg, "release ", sizeof "release"))
+      else if (strncmp (msg, "release ", sizeof "release") == 0)
         ret = release_handler (connfd, msg);
 
-      else if (!strncmp (msg, "status ", sizeof "status"))
+      else if (strncmp (msg, "status ", sizeof "status") == 0)
         ret = status_handler (connfd, msg);
 
-      else if (!strcmp (msg, "total"))
+      else if (strcmp (msg, "total") == 0)
         ret = total_handler (connfd, msg);
 
       else
