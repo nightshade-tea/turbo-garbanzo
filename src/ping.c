@@ -1,3 +1,17 @@
+/**
+ * src/ping.c
+ *
+ * ping is the client used to test the load balancer. it connects to
+ * host:port (normally loadb) and sends k pings, one per second, printing
+ * each reply.
+ *
+ * loadb relays the whole connection to a single server, so all k replies
+ * come from the same pong.
+ *
+ * ping --- ping ---> loadb --- ping ---> pong
+ *      <-- pong ---       <-- pong ---
+ */
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,7 +47,7 @@ main (int argc, char *argv[])
   errno = 0;
   k = strtoul (argv[3], &end, 10);
 
-  if (end == argv[3] || *end != '\0' || errno == ERANGE)
+  if (argv[3][0] == '-' || end == argv[3] || *end != '\0' || errno == ERANGE)
     usage ();
 
   if ((servfd = net_tcp_connect (host, port)) < 0)

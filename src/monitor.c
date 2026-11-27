@@ -13,7 +13,6 @@
  * server's state as down.
  *
  * server --- ip:port ---> monitor --- enroll ip:port, up/down key --> table
- *
  */
 
 #include <limits.h>
@@ -56,7 +55,6 @@
  * and having slot[key].servfd store the current manager thread's server
  * connection file descriptor allows the new thread to close the old thread's
  * connection, so it wakes up and dies.
- *
  */
 
 static struct slot
