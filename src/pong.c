@@ -8,14 +8,14 @@
 #include <log/pr.h>
 #include <net/io.h>
 #include <net/tcp.h>
-#include <ping/protocol.h>
 #include <mon/protocol.h>
+#include <ping/protocol.h>
 
 [[noreturn]]
 static void
 usage (void)
 {
-  fprintf (stderr, "usage: pong <ip> <port> <monitor>\n");
+  fprintf (stderr, "usage: pong <ip> <port> <monhost>\n");
   exit (2);
 }
 
@@ -27,13 +27,13 @@ lost (void)
 }
 
 static void
-serve (int cfd)
+reply (int connfd)
 {
-  char line[64];
+  char msg[PING_MSGBUFSZ];
 
   for (;;)
     {
-      if (net_io_recvln (cfd, line, sizeof line) < 0)
+      if (net_io_recvln (connfd, msg, sizeof msg) < 0)
         {
           /* too long  */
           if (errno == EMSGSIZE)
@@ -42,29 +42,34 @@ serve (int cfd)
           break;
         }
 
-      if (strcmp (line, PING) == 0
-          && net_io_sendln (cfd, PONG, sizeof PONG) < 0)
+      if (strcmp (msg, PING) == 0
+          && net_io_sendln (connfd, PONG, sizeof PONG) < 0)
         break;
     }
 
-  close (cfd);
+  close (connfd);
 }
 
 int
 main (int argc, char *argv[])
 {
-  int lfd;
+  const char *ip, *port, *monhost;
+  int listenfd;
 
   if (argc != 4)
     usage ();
 
-  if ((lfd = net_tcp_listen (argv[1], argv[2], INT_MAX)) < 0)
-    pr_err (1, "net_tcp_listen: can't listen on %s:%s", argv[1], argv[2]);
+  ip = argv[1];
+  port = argv[2];
+  monhost = argv[3];
 
-  if (mon_enroll (argv[3], argv[1], argv[2], lost) < 0)
-    pr_err (1, "mon_enroll: can't reach monitor (%s)", argv[3]);
+  if ((listenfd = net_tcp_listen (ip, port, INT_MAX)) < 0)
+    pr_err (1, "net_tcp_listen: can't listen on %s:%s", ip, port);
+
+  if (mon_enroll (monhost, ip, port, lost) < 0)
+    pr_err (1, "mon_enroll: can't reach monitor (%s)", monhost);
 
   for (;;)
-    if (net_tcp_serve (lfd, serve) < 0)
+    if (net_tcp_serve (listenfd, reply) < 0)
       pr_warn ("net_tcp_serve");
 }

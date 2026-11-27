@@ -5,6 +5,7 @@
 
 #define TBL_LENGTH 4096
 #define TBL_PORT "3030"
+#define TBL_MSGBUFSZ 128
 
 #define TBL_ADDRSTRLEN INET_ADDRSTRLEN
 #define TBL_PORTSTRLEN 6
@@ -18,27 +19,26 @@ struct server
 };
 
 /* get the key for ip:port, creating the entry if needed  */
-int tbl_enroll (int sock, const char *ip, const char *port,
-                unsigned long *key);
+int tbl_enroll (int fd, const char *ip, const char *port, unsigned long *key);
 
 /* mark key as up  */
-int tbl_up (int sock, unsigned long key);
+int tbl_up (int fd, unsigned long key);
 
 /* mark key as down  */
-int tbl_down (int sock, unsigned long key);
+int tbl_down (int fd, unsigned long key);
 
 /* pick an up server by policy ("lc" or "rr") and add a conn to it.
    returns 1 if no server is up.  */
-int tbl_grab (int sock, const char *policy, unsigned long *key,
+int tbl_grab (int fd, const char *policy, unsigned long *key,
               struct server *srv);
 
 /* remove a conn from key  */
-int tbl_release (int sock, unsigned long key);
+int tbl_release (int fd, unsigned long key);
 
 /* get the entry for key  */
-int tbl_status (int sock, unsigned long key, struct server *srv);
+int tbl_status (int fd, unsigned long key, struct server *srv);
 
 /* get the total # of conns  */
-int tbl_total (int sock, unsigned long *total);
+int tbl_total (int fd, unsigned long *total);
 
 #endif /* TBL_PROTOCOL_H  */

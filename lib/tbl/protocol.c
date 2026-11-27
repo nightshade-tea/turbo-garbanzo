@@ -6,8 +6,6 @@
 #include <net/io.h>
 #include <tbl/protocol.h>
 
-#define MSGBUFSZ 128 /* rw buf for table replies  */
-
 static int
 parse_ulong (const char *s, char term, unsigned long *n, char **end)
 {
@@ -64,16 +62,16 @@ parse_server (const char *s, struct server *srv)
 }
 
 static int
-ok_cmd (int sock, const char *cmd, unsigned long key)
+ok_cmd (int fd, const char *cmd, unsigned long key)
 {
-  char msg[MSGBUFSZ];
+  char msg[TBL_MSGBUFSZ];
 
   snprintf (msg, sizeof msg, "%s %lu", cmd, key);
 
-  if (net_io_sendln (sock, msg, sizeof msg) < 0)
+  if (net_io_sendln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+  if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
   if (strcmp (msg, "ok"))
@@ -86,45 +84,45 @@ ok_cmd (int sock, const char *cmd, unsigned long key)
 }
 
 int
-tbl_enroll (int sock, const char *ip, const char *port, unsigned long *key)
+tbl_enroll (int fd, const char *ip, const char *port, unsigned long *key)
 {
-  char msg[MSGBUFSZ];
+  char msg[TBL_MSGBUFSZ];
 
   snprintf (msg, sizeof msg, "enroll %s %s", ip, port);
 
-  if (net_io_sendln (sock, msg, sizeof msg) < 0)
+  if (net_io_sendln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+  if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
   return parse_ulong (msg, '\0', key, NULL);
 }
 
 int
-tbl_up (int sock, unsigned long key)
+tbl_up (int fd, unsigned long key)
 {
-  return ok_cmd (sock, "up", key);
+  return ok_cmd (fd, "up", key);
 }
 
 int
-tbl_down (int sock, unsigned long key)
+tbl_down (int fd, unsigned long key)
 {
-  return ok_cmd (sock, "down", key);
+  return ok_cmd (fd, "down", key);
 }
 
 int
-tbl_grab (int sock, const char *policy, unsigned long *key, struct server *srv)
+tbl_grab (int fd, const char *policy, unsigned long *key, struct server *srv)
 {
-  char msg[MSGBUFSZ], *end;
+  char msg[TBL_MSGBUFSZ], *end;
   unsigned long n;
 
   snprintf (msg, sizeof msg, "grab %s", policy);
 
-  if (net_io_sendln (sock, msg, sizeof msg) < 0)
+  if (net_io_sendln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+  if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
   if (!strcmp (msg, "none"))
@@ -142,36 +140,36 @@ tbl_grab (int sock, const char *policy, unsigned long *key, struct server *srv)
 }
 
 int
-tbl_release (int sock, unsigned long key)
+tbl_release (int fd, unsigned long key)
 {
-  return ok_cmd (sock, "release", key);
+  return ok_cmd (fd, "release", key);
 }
 
 int
-tbl_status (int sock, unsigned long key, struct server *srv)
+tbl_status (int fd, unsigned long key, struct server *srv)
 {
-  char msg[MSGBUFSZ];
+  char msg[TBL_MSGBUFSZ];
 
   snprintf (msg, sizeof msg, "status %lu", key);
 
-  if (net_io_sendln (sock, msg, sizeof msg) < 0)
+  if (net_io_sendln (fd, msg, sizeof msg) < 0)
     return -1;
 
-  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+  if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
   return parse_server (msg, srv);
 }
 
 int
-tbl_total (int sock, unsigned long *total)
+tbl_total (int fd, unsigned long *total)
 {
-  char msg[MSGBUFSZ];
+  char msg[TBL_MSGBUFSZ];
 
-  if (net_io_sendln (sock, "total", sizeof "total") < 0)
+  if (net_io_sendln (fd, "total", sizeof "total") < 0)
     return -1;
 
-  if (net_io_recvln (sock, msg, sizeof msg) < 0)
+  if (net_io_recvln (fd, msg, sizeof msg) < 0)
     return -1;
 
   return parse_ulong (msg, '\0', total, NULL);

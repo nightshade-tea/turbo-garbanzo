@@ -8,7 +8,7 @@
 #include <net/io.h>
 
 ssize_t
-net_io_send (int sock, const void *buf, size_t len)
+net_io_send (int fd, const void *buf, size_t len)
 {
   const char *p = buf;
   size_t off = 0;
@@ -16,7 +16,7 @@ net_io_send (int sock, const void *buf, size_t len)
 
   while (off < len)
     {
-      n = send (sock, p + off, len - off, MSG_NOSIGNAL);
+      n = send (fd, p + off, len - off, MSG_NOSIGNAL);
 
       if (n < 0)
         {
@@ -33,7 +33,7 @@ net_io_send (int sock, const void *buf, size_t len)
 }
 
 ssize_t
-net_io_sendln (int sock, const char *str, size_t len)
+net_io_sendln (int fd, const char *str, size_t len)
 {
   size_t sent, slen = 0;
   ssize_t n;
@@ -54,7 +54,7 @@ net_io_sendln (int sock, const char *str, size_t len)
 
   while (msg.msg_iovlen > 0)
     {
-      n = sendmsg (sock, &msg, MSG_NOSIGNAL);
+      n = sendmsg (fd, &msg, MSG_NOSIGNAL);
 
       if (n < 0)
         {
@@ -85,7 +85,7 @@ net_io_sendln (int sock, const char *str, size_t len)
 }
 
 ssize_t
-net_io_recv (int sock, void *buf, size_t len)
+net_io_recv (int fd, void *buf, size_t len)
 {
   char *p = buf;
   size_t off = 0;
@@ -93,7 +93,7 @@ net_io_recv (int sock, void *buf, size_t len)
 
   while (off < len)
     {
-      n = recv (sock, p + off, len - off, 0);
+      n = recv (fd, p + off, len - off, 0);
 
       if (n < 0)
         {
@@ -122,15 +122,15 @@ net_io_recv (int sock, void *buf, size_t len)
 
 /* consume up to and including the next '\n' or until eof.  */
 static int
-chomp (int sock)
+chomp (int fd)
 {
-  char tmp[512], *end;
+  char buf[512], *end;
   size_t drop;
   ssize_t n;
 
   for (;;)
     {
-      if ((n = recv (sock, tmp, sizeof tmp, MSG_PEEK)) < 0)
+      if ((n = recv (fd, buf, sizeof buf, MSG_PEEK)) < 0)
         {
           if (errno == EINTR)
             continue;
@@ -141,10 +141,10 @@ chomp (int sock)
       if (n == 0)
         return 0;
 
-      end = memchr (tmp, '\n', (size_t)n);
-      drop = end != NULL ? (size_t)(end - tmp) + 1 : (size_t)n;
+      end = memchr (buf, '\n', (size_t)n);
+      drop = end != NULL ? (size_t)(end - buf) + 1 : (size_t)n;
 
-      if (net_io_recv (sock, tmp, drop) < 0)
+      if (net_io_recv (fd, buf, drop) < 0)
         return -1;
 
       if (end != NULL)
@@ -153,7 +153,7 @@ chomp (int sock)
 }
 
 ssize_t
-net_io_recvln (int sock, char *str, size_t len)
+net_io_recvln (int fd, char *str, size_t len)
 {
   char *nl;
   size_t i = 0, k;
@@ -165,7 +165,7 @@ net_io_recvln (int sock, char *str, size_t len)
   /* peek, then consume only up to the '\n'  */
   for (;;)
     {
-      n = recv (sock, str + i, len - i, MSG_PEEK);
+      n = recv (fd, str + i, len - i, MSG_PEEK);
 
       if (n < 0 && errno == EINTR)
         continue;
@@ -191,7 +191,7 @@ net_io_recvln (int sock, char *str, size_t len)
         {
           k = (size_t)(nl - str) - i;
 
-          if (net_io_recv (sock, str + i, k + 1) < 0)
+          if (net_io_recv (fd, str + i, k + 1) < 0)
             {
               ret = -1;
               break;
@@ -207,18 +207,18 @@ net_io_recvln (int sock, char *str, size_t len)
         {
           ret = -1;
 
-          if (net_io_recv (sock, str + i, len - 1 - i) < 0)
+          if (net_io_recv (fd, str + i, len - 1 - i) < 0)
             break;
 
           i = len - 1;
 
-          if (chomp (sock) == 0)
+          if (chomp (fd) == 0)
             errno = EMSGSIZE;
 
           break;
         }
 
-      if (net_io_recv (sock, str + i, (size_t)n) < 0)
+      if (net_io_recv (fd, str + i, (size_t)n) < 0)
         {
           ret = -1;
           break;
@@ -232,12 +232,12 @@ net_io_recvln (int sock, char *str, size_t len)
 }
 
 int
-net_io_hold (int sock)
+net_io_hold (int fd)
 {
   ssize_t n;
   char c;
 
-  while ((n = recv (sock, &c, 1, 0)) > 0 || (n < 0 && errno == EINTR))
+  while ((n = recv (fd, &c, 1, 0)) > 0 || (n < 0 && errno == EINTR))
     ;
 
   if (n < 0)
@@ -253,7 +253,7 @@ net_io_relay (int afd, int bfd)
 {
   struct pollfd pfd[2]
       = { { .fd = afd, .events = POLLIN }, { .fd = bfd, .events = POLLIN } };
-  int fd[2] = { afd, bfd }, open = 2, i;
+  int fds[2] = { afd, bfd }, open = 2, i;
   char buf[4096];
   ssize_t n;
 
@@ -272,19 +272,19 @@ net_io_relay (int afd, int bfd)
           if (pfd[i].revents == 0)
             continue;
 
-          if ((n = recv (fd[i], buf, sizeof buf, 0)) < 0 && errno == EINTR)
+          if ((n = recv (fds[i], buf, sizeof buf, 0)) < 0 && errno == EINTR)
             continue;
 
           /* eof or error, pass it on and stop watching this side  */
           if (n <= 0)
             {
-              shutdown (fd[!i], SHUT_WR);
+              shutdown (fds[!i], SHUT_WR);
               pfd[i].fd = -1;
               --open;
               continue;
             }
 
-          if (net_io_send (fd[!i], buf, (size_t)n) < 0)
+          if (net_io_send (fds[!i], buf, (size_t)n) < 0)
             return -1;
         }
     }

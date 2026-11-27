@@ -8,8 +8,6 @@
 #include <net/tcp.h>
 #include <mon/protocol.h>
 
-#define MSGBUFSZ 64 /* "<ip> <port>" sent to mon  */
-
 struct watch_ctx
 {
   void (*lostfn) (void);
@@ -37,7 +35,7 @@ int
 mon_enroll (const char *monhost, const char *ip, const char *port,
             void (*lostfn) (void))
 {
-  char msg[MSGBUFSZ];
+  char msg[MON_MSGBUFSZ];
   struct watch_ctx *w;
   int monfd, rc;
   pthread_t t;

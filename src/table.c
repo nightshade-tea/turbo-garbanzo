@@ -5,14 +5,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <sys/socket.h>
-#include <err.h>
 
+#include <log/pr.h>
 #include <net/io.h>
 #include <net/tcp.h>
 #include <tbl/protocol.h>
-
-#define MSGBUFSZ 256
 
 static struct server table[TBL_LENGTH];
 static _Atomic unsigned long count, total;
@@ -39,7 +36,7 @@ parse_key (const char *p, unsigned long *key)
 }
 
 static int
-enroll_handler (int sock, char msg[MSGBUFSZ])
+enroll_handler (int connfd, char msg[TBL_MSGBUFSZ])
 {
   char ip[TBL_ADDRSTRLEN], port[TBL_PORTSTRLEN], *p, *sp;
   size_t iplen, portlen;
@@ -85,16 +82,16 @@ enroll_handler (int sock, char msg[MSGBUFSZ])
 
   pthread_mutex_unlock (&lock);
 
-  snprintf (msg, MSGBUFSZ, "%lu", key);
+  snprintf (msg, TBL_MSGBUFSZ, "%lu", key);
 
-  if (net_io_sendln (sock, msg, MSGBUFSZ) < 0)
+  if (net_io_sendln (connfd, msg, TBL_MSGBUFSZ) < 0)
     return -1;
 
   return 0;
 }
 
 static int
-up_handler (int sock, char msg[MSGBUFSZ])
+up_handler (int connfd, char msg[TBL_MSGBUFSZ])
 {
   unsigned long key;
 
@@ -103,14 +100,14 @@ up_handler (int sock, char msg[MSGBUFSZ])
 
   table[key].state = 1;
 
-  if (net_io_sendln (sock, "ok", sizeof "ok") < 0)
+  if (net_io_sendln (connfd, "ok", sizeof "ok") < 0)
     return -1;
 
   return 0;
 }
 
 static int
-down_handler (int sock, char msg[MSGBUFSZ])
+down_handler (int connfd, char msg[TBL_MSGBUFSZ])
 {
   unsigned long key;
 
@@ -119,14 +116,14 @@ down_handler (int sock, char msg[MSGBUFSZ])
 
   table[key].state = 0;
 
-  if (net_io_sendln (sock, "ok", sizeof "ok") < 0)
+  if (net_io_sendln (connfd, "ok", sizeof "ok") < 0)
     return -1;
 
   return 0;
 }
 
 static int
-grab_handler (int sock, char msg[MSGBUFSZ])
+grab_handler (int connfd, char msg[TBL_MSGBUFSZ])
 {
   unsigned long i, j, n, key, conns = 0;
   char *p;
@@ -174,20 +171,20 @@ grab_handler (int sock, char msg[MSGBUFSZ])
   pthread_mutex_unlock (&lock);
 
   if (key == n)
-    snprintf (msg, MSGBUFSZ, "none");
+    snprintf (msg, TBL_MSGBUFSZ, "none");
 
   else
-    snprintf (msg, MSGBUFSZ, "%lu %s %s up %lu", key, table[key].ip,
+    snprintf (msg, TBL_MSGBUFSZ, "%lu %s %s up %lu", key, table[key].ip,
               table[key].port, conns);
 
-  if (net_io_sendln (sock, msg, MSGBUFSZ) < 0)
+  if (net_io_sendln (connfd, msg, TBL_MSGBUFSZ) < 0)
     return -1;
 
   return 0;
 }
 
 static int
-release_handler (int sock, char msg[MSGBUFSZ])
+release_handler (int connfd, char msg[TBL_MSGBUFSZ])
 {
   unsigned long key;
 
@@ -207,35 +204,35 @@ release_handler (int sock, char msg[MSGBUFSZ])
 
   pthread_mutex_unlock (&lock);
 
-  if (net_io_sendln (sock, "ok", sizeof "ok") < 0)
+  if (net_io_sendln (connfd, "ok", sizeof "ok") < 0)
     return -1;
 
   return 0;
 }
 
 static int
-status_handler (int sock, char msg[MSGBUFSZ])
+status_handler (int connfd, char msg[TBL_MSGBUFSZ])
 {
   unsigned long key;
 
   if (parse_key (msg + sizeof "status", &key) < 0)
     return -1;
 
-  snprintf (msg, MSGBUFSZ, "%s %s %s %lu", table[key].ip, table[key].port,
+  snprintf (msg, TBL_MSGBUFSZ, "%s %s %s %lu", table[key].ip, table[key].port,
             table[key].state ? "up" : "down", (unsigned long)table[key].conns);
 
-  if (net_io_sendln (sock, msg, MSGBUFSZ) < 0)
+  if (net_io_sendln (connfd, msg, TBL_MSGBUFSZ) < 0)
     return -1;
 
   return 0;
 }
 
 static int
-total_handler (int sock, char msg[MSGBUFSZ])
+total_handler (int connfd, char msg[TBL_MSGBUFSZ])
 {
-  snprintf (msg, MSGBUFSZ, "%lu", (unsigned long)total);
+  snprintf (msg, TBL_MSGBUFSZ, "%lu", (unsigned long)total);
 
-  if (net_io_sendln (sock, msg, MSGBUFSZ) < 0)
+  if (net_io_sendln (connfd, msg, TBL_MSGBUFSZ) < 0)
     return -1;
 
   return 0;
@@ -245,19 +242,19 @@ total_handler (int sock, char msg[MSGBUFSZ])
 static void
 usage (void)
 {
-  fprintf (stderr, "usage: table [host]\n");
+  fprintf (stderr, "usage: table <ip>\n");
   exit (2);
 }
 
 static void
-serve (int cfd)
+handle (int connfd)
 {
   int ret;
-  char msg[MSGBUFSZ];
+  char msg[TBL_MSGBUFSZ];
 
   for (;;)
     {
-      if (net_io_recvln (cfd, msg, sizeof msg) < 0)
+      if (net_io_recvln (connfd, msg, sizeof msg) < 0)
         {
           /* too long  */
           if (errno == EMSGSIZE)
@@ -268,25 +265,25 @@ serve (int cfd)
 
       /* handle command  */
       if (!strncmp (msg, "enroll ", sizeof "enroll"))
-        ret = enroll_handler (cfd, msg);
+        ret = enroll_handler (connfd, msg);
 
       else if (!strncmp (msg, "up ", sizeof "up"))
-        ret = up_handler (cfd, msg);
+        ret = up_handler (connfd, msg);
 
       else if (!strncmp (msg, "down ", sizeof "down"))
-        ret = down_handler (cfd, msg);
+        ret = down_handler (connfd, msg);
 
       else if (!strncmp (msg, "grab ", sizeof "grab"))
-        ret = grab_handler (cfd, msg);
+        ret = grab_handler (connfd, msg);
 
       else if (!strncmp (msg, "release ", sizeof "release"))
-        ret = release_handler (cfd, msg);
+        ret = release_handler (connfd, msg);
 
       else if (!strncmp (msg, "status ", sizeof "status"))
-        ret = status_handler (cfd, msg);
+        ret = status_handler (connfd, msg);
 
       else if (!strcmp (msg, "total"))
-        ret = total_handler (cfd, msg);
+        ret = total_handler (connfd, msg);
 
       else
         break;
@@ -295,28 +292,24 @@ serve (int cfd)
         break;
     }
 
-  close (cfd);
+  close (connfd);
 }
 
 int
 main (int argc, char *argv[])
 {
-  const char *host;
-  int lfd;
+  const char *ip;
+  int listenfd;
 
-  if (argc != 1 && argc != 2)
+  if (argc != 2)
     usage ();
 
-  if (argc == 2)
-    host = argv[1];
+  ip = argv[1];
 
-  else
-    host = "0.0.0.0";
-
-  if ((lfd = net_tcp_listen (host, TBL_PORT, INT_MAX)) < 0)
-    return 1;
+  if ((listenfd = net_tcp_listen (ip, TBL_PORT, INT_MAX)) < 0)
+    pr_err (1, "net_tcp_listen: can't listen on %s:%s", ip, TBL_PORT);
 
   for (;;)
-    if (net_tcp_serve (lfd, serve) < 0)
-      warn ("net_tcp_serve");
+    if (net_tcp_serve (listenfd, handle) < 0)
+      pr_warn ("net_tcp_serve");
 }

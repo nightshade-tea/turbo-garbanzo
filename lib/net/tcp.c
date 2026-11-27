@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -6,11 +7,10 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netdb.h>
-#include <errno.h>
 
 #include <net/tcp.h>
 
-struct conn
+struct conn_ctx
 {
   void (*connfn) (int connfd);
   int connfd;
@@ -41,7 +41,7 @@ int
 net_tcp_listen (const char *host, const char *port, int backlog)
 {
   struct addrinfo hints = { 0 }, *res;
-  int rc, sfd, one = 1;
+  int rc, listenfd, one = 1;
 
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
@@ -53,25 +53,26 @@ net_tcp_listen (const char *host, const char *port, int backlog)
       return -1;
     }
 
-  if ((sfd = socket (res->ai_family, res->ai_socktype, res->ai_protocol)) < 0)
+  if ((listenfd = socket (res->ai_family, res->ai_socktype, res->ai_protocol))
+      < 0)
     goto err_socket;
 
-  if (setsockopt (sfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one) < 0)
+  if (setsockopt (listenfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one) < 0)
     goto err_setsockopt;
 
-  if (bind (sfd, res->ai_addr, res->ai_addrlen) < 0)
+  if (bind (listenfd, res->ai_addr, res->ai_addrlen) < 0)
     goto err_bind;
 
-  if (listen (sfd, backlog) < 0)
+  if (listen (listenfd, backlog) < 0)
     goto err_listen;
 
   freeaddrinfo (res);
-  return sfd;
+  return listenfd;
 
 err_listen:
 err_bind:
 err_setsockopt:
-  close (sfd);
+  close (listenfd);
 err_socket:
   freeaddrinfo (res);
   return -1;
@@ -81,7 +82,7 @@ int
 net_tcp_connect (const char *host, const char *port)
 {
   struct addrinfo hints = { 0 }, *res;
-  int rc, sfd;
+  int rc, connfd;
 
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
@@ -92,26 +93,27 @@ net_tcp_connect (const char *host, const char *port)
       return -1;
     }
 
-  if ((sfd = socket (res->ai_family, res->ai_socktype, res->ai_protocol)) < 0)
+  if ((connfd = socket (res->ai_family, res->ai_socktype, res->ai_protocol))
+      < 0)
     goto err_socket;
 
-  if (connect (sfd, res->ai_addr, res->ai_addrlen) < 0)
+  if (connect (connfd, res->ai_addr, res->ai_addrlen) < 0)
     goto err_connect;
 
   freeaddrinfo (res);
-  return sfd;
+  return connfd;
 
 err_connect:
-  close (sfd);
+  close (connfd);
 err_socket:
   freeaddrinfo (res);
   return -1;
 }
 
 static void *
-conn_start (void *arg)
+conn (void *arg)
 {
-  struct conn c = *(struct conn *)arg;
+  struct conn_ctx c = *(struct conn_ctx *)arg;
 
   free (arg);
   c.connfn (c.connfd);
@@ -122,7 +124,7 @@ conn_start (void *arg)
 int
 net_tcp_serve (int listenfd, void (*connfn) (int connfd))
 {
-  struct conn *c;
+  struct conn_ctx *c;
   pthread_t t;
   int connfd, rc;
 
@@ -135,7 +137,7 @@ net_tcp_serve (int listenfd, void (*connfn) (int connfd))
   c->connfn = connfn;
   c->connfd = connfd;
 
-  if ((rc = pthread_create (&t, NULL, conn_start, c)))
+  if ((rc = pthread_create (&t, NULL, conn, c)))
     {
       errno = rc;
       goto err_pthread_create;
@@ -152,15 +154,14 @@ err_malloc:
 }
 
 int
-net_tcp_keepalive (int sock, int idle, int intvl, int cnt)
+net_tcp_keepalive (int fd, int idle, int intvl, int cnt)
 {
   int one = 1;
 
-  if (setsockopt (sock, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof one) < 0
-      || setsockopt (sock, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof idle) < 0
-      || setsockopt (sock, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof intvl)
-             < 0
-      || setsockopt (sock, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof cnt) < 0)
+  if (setsockopt (fd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof one) < 0
+      || setsockopt (fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof idle) < 0
+      || setsockopt (fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof intvl) < 0
+      || setsockopt (fd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof cnt) < 0)
     return -1;
 
   return 0;

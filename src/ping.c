@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <err.h>
 
+#include <log/pr.h>
 #include <net/io.h>
 #include <net/tcp.h>
 #include <ping/protocol.h>
@@ -19,12 +19,16 @@ usage (void)
 int
 main (int argc, char *argv[])
 {
+  char msg[PING_MSGBUFSZ], *end;
+  const char *host, *port;
   unsigned long k, i;
-  char line[64], *end;
-  int sock;
+  int servfd;
 
   if (argc != 4)
     usage ();
+
+  host = argv[1];
+  port = argv[2];
 
   errno = 0;
   k = strtoul (argv[3], &end, 10);
@@ -32,23 +36,23 @@ main (int argc, char *argv[])
   if (end == argv[3] || *end != '\0' || errno == ERANGE)
     usage ();
 
-  if ((sock = net_tcp_connect (argv[1], argv[2])) < 0)
-    return 1;
+  if ((servfd = net_tcp_connect (host, port)) < 0)
+    pr_err (1, "net_tcp_connect: can't reach %s:%s", host, port);
 
   /* one ping per second  */
   for (i = 0; i < k; ++i)
     {
-      if (net_io_sendln (sock, PING, sizeof PING) < 0)
-        err (1, "send");
+      if (net_io_sendln (servfd, PING, sizeof PING) < 0)
+        pr_err (1, "net_io_sendln");
 
-      if (net_io_recvln (sock, line, sizeof line) < 0)
-        err (1, "recv");
+      if (net_io_recvln (servfd, msg, sizeof msg) < 0)
+        pr_err (1, "net_io_recvln");
 
-      puts (line);
+      puts (msg);
       sleep (1);
     }
 
-  close (sock);
+  close (servfd);
 
   return 0;
 }
