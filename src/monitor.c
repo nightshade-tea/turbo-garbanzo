@@ -32,29 +32,18 @@
 /**
  * struct slot
  *
- * control structure to manage the servers
+ * one per key, so that only the newest manager thread of a server sets its
+ * state on table.
  *
- * suppose a server quickly restarts, and before the old manager thread notices
- * that the server died, that server reconnects to monitor and gets a new
- * manager thread.
+ * if a server restarts before its old manager thread notices that it died,
+ * the new connection gets a new manager thread, and for a moment two threads
+ * manage the same key. if the old one then set the state to down, it would
+ * clobber the new one's up, and the server would be wrongfully marked as down.
  *
- * momentarily, we'd have two threads that are managing the same server, and
- * that could lead to problems: the old thread may set its state to down after
- * the new thread has set the state to up, and that server would be wrongfully
- * marked as down on table.
- *
- * because of that, we need to ensure that only the new thread sets the state
- * for that server in table and sets slot[key].servfd with the current
- * connection's socket file descriptor.
- *
- * to guarantee that, we make the manager threads grab slot[key].slock before
- * setting the server's state, and only do that when slot[key].servfd is the
- * same as its local servfd variable. that way, the new thread always sets the
- * state last and slot[key].servfd isn't clobbered.
- *
- * and having slot[key].servfd store the current manager thread's server
- * connection file descriptor allows the new thread to close the old thread's
- * connection, so it wakes up and dies.
+ * so manager threads only set the state while holding slots[key].slock, and
+ * only if slots[key].servfd is still their own connection. a new thread takes
+ * over by storing its servfd there and shutting down the old one, which wakes
+ * the old thread so it exits without touching the state.
  */
 
 static struct slot
