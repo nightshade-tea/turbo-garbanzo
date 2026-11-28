@@ -6,7 +6,7 @@
  * the round trip time, then a summary.
  *
  * loadb relays the whole connection to a single server, so all replies
- * come from the same pong.
+ * come from the same pong, unless it dies and loadb moves ping to another one.
  *
  * ping --- ping ---> loadb --- ping ---> pong
  *      <-- pong ip:port ---  <-- pong ip:port ---
